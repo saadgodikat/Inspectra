@@ -1,184 +1,438 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { authApi } from '../api/client';
-import type { HealthStatus } from '../types';
-import {
-  CheckCircle,
-  Database,
-  KeyRound,
-  ShieldCheck,
-  Server,
-  Layers,
-  Sparkles,
-  ArrowRight,
-  Boxes,
-} from 'lucide-react';
+import { authApi, inspectionsApi, productsApi, batchesApi } from '../api/client';
+import type { HealthStatus, Inspection, Product, Batch } from '../types';
 import { useNavigate } from 'react-router-dom';
+
+/* ── Simulated telemetry seed data ── */
+const STATIONS = ['STN-01', 'STN-02', 'STN-03', 'STN-04'];
+const SHIFT_LABELS: Record<number, string> = { 0: 'NIGHT', 1: 'DAY', 2: 'SWING' };
+
+const getShift = () => {
+  const h = new Date().getHours();
+  if (h >= 6 && h < 14) return 1;
+  if (h >= 14 && h < 22) return 2;
+  return 0;
+};
 
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
-  const [health, setHealth] = useState<HealthStatus | null>(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    authApi.getHealth().then(setHealth).catch(() => {
-      setHealth({ status: 'error', database: 'disconnected' });
-    });
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [inspections, setInspections] = useState<Inspection[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [utcTime, setUtcTime] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [healthRes, inspRes, prodRes, batchRes] = await Promise.allSettled([
+        authApi.getHealth(),
+        inspectionsApi.list({ per_page: 50 }),
+        productsApi.list(),
+        batchesApi.list(),
+      ]);
+      if (healthRes.status === 'fulfilled') setHealth(healthRes.value);
+      if (inspRes.status === 'fulfilled') setInspections(inspRes.value.inspections);
+      if (prodRes.status === 'fulfilled') setProducts(prodRes.value.products);
+      if (batchRes.status === 'fulfilled') setBatches(batchRes.value.batches);
+    } catch {
+      /* graceful degrade */
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  return (
-    <div className="space-y-8 max-w-6xl mx-auto">
-      {/* Welcome Banner */}
-      <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-indigo-950/60 via-slate-900/80 to-slate-900 border border-indigo-500/20 p-8 shadow-xl">
-        <div className="absolute top-0 right-0 w-80 h-full bg-gradient-to-l from-indigo-500/10 to-transparent pointer-events-none" />
-        <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-semibold mb-4">
-            <Sparkles className="w-3.5 h-3.5" /> Phase 1 Foundation Verified
-          </div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">
-            Welcome back, {user?.name}
-          </h1>
-          <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-            You are signed in as an authorized{' '}
-            <span className="font-semibold text-indigo-400 uppercase">{user?.role}</span>.
-            The foundation, database schemas, RBAC permission middleware, and secure authentication
-            pipeline are fully initialized and operating.
-          </p>
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
 
-          <div className="mt-6 flex flex-wrap gap-3">
+  useEffect(() => {
+    const tick = () => setUtcTime(new Date().toISOString().slice(11, 19) + ' UTC');
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  /* ── Computed KPIs ── */
+  const totalInspections = inspections.length;
+  const pendingReview = inspections.filter((i) => i.status === 'pending_review').length;
+  const processingCount = inspections.filter((i) => i.status === 'processing').length;
+  const reviewedCount = inspections.filter((i) => i.status === 'reviewed').length;
+  const failedCount = inspections.filter((i) => i.status === 'processing_failed').length;
+  const fpy = totalInspections > 0 ? ((reviewedCount / totalInspections) * 100).toFixed(1) : '—';
+
+  const activeBatches = batches.filter((b) => !['archived', 'released'].includes(b.status)).length;
+  const releasedBatches = batches.filter((b) => b.status === 'released').length;
+  const onHoldBatches = batches.filter((b) => b.status === 'on_hold').length;
+  const activeProducts = products.filter((p) => p.is_active).length;
+
+  const shift = getShift();
+  const shiftLabel = SHIFT_LABELS[shift];
+
+  const recentInspections = [...inspections]
+    .sort((a, b) => new Date(b.inspection_timestamp).getTime() - new Date(a.inspection_timestamp).getTime())
+    .slice(0, 8);
+
+  const statusColor = (s: string) => {
+    switch (s) {
+      case 'pending_upload': return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
+      case 'processing': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+      case 'pending_review': return 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30';
+      case 'reviewed': return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
+      case 'processing_failed': return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
+      default: return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
+    }
+  };
+
+  const batchStatusColor = (s: string) => {
+    switch (s) {
+      case 'created': return 'bg-slate-800 text-slate-300 border-slate-700';
+      case 'in_production': return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
+      case 'produced': return 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30';
+      case 'under_inspection': return 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30';
+      case 'on_hold': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+      case 'released': return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
+      default: return 'bg-slate-800/80 text-slate-400 border-slate-700/60';
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-[1440px] mx-auto">
+      {/* ── Header Banner ── */}
+      <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-surface-container-lowest via-surface-container-low to-surface-container border border-surface-container-high p-6 shadow-xl">
+        <div className="absolute top-0 right-0 w-96 h-full bg-gradient-to-l from-primary/5 to-transparent pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-72 h-40 bg-gradient-to-tr from-tertiary/5 to-transparent pointer-events-none rounded-tr-full" />
+
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <span className="px-2.5 py-0.5 rounded bg-primary/15 border border-primary/30 text-primary text-label-sm font-mono font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                SHIFT {String(shift).padStart(2, '0')} ({shiftLabel})
+              </span>
+              <span className="px-2.5 py-0.5 rounded bg-tertiary/10 border border-tertiary/25 text-tertiary text-label-sm font-mono uppercase tracking-wider">
+                {utcTime}
+              </span>
+            </div>
+            <h1 className="text-headline-lg font-headline text-on-surface tracking-tight font-bold">
+              Command Center
+            </h1>
+            <p className="mt-1 text-body-md text-on-surface-variant leading-relaxed max-w-xl">
+              Welcome back, <span className="font-semibold text-primary">{user?.name}</span>.
+              Real-time overview of quality operations across all active production lines.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => navigate('/products')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-md shadow-indigo-600/30"
+              onClick={() => navigate('/inspections')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-body-sm font-semibold transition-all shadow-md shadow-primary/20"
             >
-              <span>Explore Products & Batches (Phase 2 Preview)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <span className="material-symbols-outlined text-[18px]">fact_check</span>
+              <span>Open Inspections</span>
             </button>
-            {user?.role === 'quality_manager' && (
+            <button
+              onClick={() => navigate('/analytics')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/30 text-on-surface-variant text-body-sm font-semibold transition-all"
+            >
+              <span className="material-symbols-outlined text-[18px]">query_stats</span>
+              <span>View SPC Analytics</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── KPI Ribbon ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+        {[
+          { label: 'Total Inspections', value: totalInspections, icon: 'fact_check', accent: 'text-on-surface' },
+          { label: 'Pending Review', value: pendingReview, icon: 'pending_actions', accent: 'text-cyan-400' },
+          { label: 'Processing', value: processingCount, icon: 'hourglass_top', accent: 'text-amber-400' },
+          { label: 'Reviewed / Pass', value: reviewedCount, icon: 'check_circle', accent: 'text-emerald-400' },
+          { label: 'Failed', value: failedCount, icon: 'error', accent: 'text-rose-400' },
+          { label: 'Active Batches', value: activeBatches, icon: 'inventory_2', accent: 'text-blue-400' },
+          { label: 'Released', value: releasedBatches, icon: 'verified', accent: 'text-emerald-400' },
+          { label: 'On Hold', value: onHoldBatches, icon: 'block', accent: 'text-amber-400' },
+        ].map((kpi) => (
+          <div
+            key={kpi.label}
+            className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-outline-variant/40 transition-colors group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-label-sm text-outline font-mono uppercase tracking-wider truncate">{kpi.label}</span>
+              <span className={`material-symbols-outlined text-[16px] ${kpi.accent} opacity-60 group-hover:opacity-100 transition-opacity`}>
+                {kpi.icon}
+              </span>
+            </div>
+            <div className={`text-xl font-bold font-mono ${kpi.accent}`}>
+              {loading ? '—' : kpi.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Main Grid: 2 columns ── */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+        {/* ── Left: System Health + Recent Inspections ── */}
+        <div className="xl:col-span-2 space-y-6">
+
+          {/* System Health Strip */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-label-sm text-outline font-mono uppercase tracking-wider">API Server</span>
+                <span className="material-symbols-outlined text-[18px] text-emerald-400">dns</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-body-md font-semibold text-on-surface">
+                  {health?.status === 'healthy' ? 'Operational' : 'Connecting…'}
+                </span>
+              </div>
+              <p className="text-label-sm text-outline mt-1 font-mono">Flask REST • :5000</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Database</span>
+                <span className="material-symbols-outlined text-[18px] text-blue-400">database</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[14px] text-emerald-400">check_circle</span>
+                <span className="text-body-md font-semibold text-on-surface">
+                  {health?.database === 'connected' ? 'Connected' : 'Syncing'}
+                </span>
+              </div>
+              <p className="text-label-sm text-outline mt-1 font-mono">SQLAlchemy + Alembic</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Auth</span>
+                <span className="material-symbols-outlined text-[18px] text-cyan-400">shield</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[14px] text-cyan-400">lock</span>
+                <span className="text-body-md font-semibold text-on-surface">JWT Active</span>
+              </div>
+              <p className="text-label-sm text-outline mt-1 font-mono">RBAC • Bcrypt</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Catalog</span>
+                <span className="material-symbols-outlined text-[18px] text-primary">inventory</span>
+              </div>
+              <div className="text-body-md font-semibold text-on-surface">
+                {activeProducts} Products
+              </div>
+              <p className="text-label-sm text-outline mt-1 font-mono">{batches.length} total batches</p>
+            </div>
+          </div>
+
+          {/* Recent Inspections Table */}
+          <div className="rounded-2xl bg-surface-container-lowest border border-surface-container-high overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-surface-container-high">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-[18px] text-primary">history</span>
+                <h3 className="text-body-lg font-headline font-semibold text-on-surface">Recent Inspections</h3>
+                <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/25 text-primary text-label-sm font-mono">
+                  {totalInspections}
+                </span>
+              </div>
               <button
-                onClick={() => navigate('/users')}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all"
+                onClick={() => navigate('/inspections')}
+                className="text-label-sm text-primary hover:text-primary/80 font-semibold font-mono uppercase tracking-wider transition-colors flex items-center gap-1"
               >
-                <span>Manage Users & Roles</span>
+                View All
+                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
               </button>
+            </div>
+
+            {loading ? (
+              <div className="p-12 text-center">
+                <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-3" />
+                <span className="text-body-sm text-outline font-mono">Loading inspection data…</span>
+              </div>
+            ) : recentInspections.length === 0 ? (
+              <div className="p-12 text-center">
+                <span className="material-symbols-outlined text-[32px] text-outline/40 mb-2 block">inbox</span>
+                <p className="text-body-md text-on-surface-variant font-semibold">No inspections recorded</p>
+                <p className="text-body-sm text-outline mt-1">Create your first inspection to get started.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-surface-container-high text-outline bg-surface-container-low/40">
+                      <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">ID</th>
+                      <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Product</th>
+                      <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Batch</th>
+                      <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Status</th>
+                      <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Images</th>
+                      <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container-high/60">
+                    {recentInspections.map((insp) => (
+                      <tr
+                        key={insp.id}
+                        className="hover:bg-surface-container/30 transition-colors cursor-pointer"
+                        onClick={() => navigate('/inspections')}
+                      >
+                        <td className="py-3 px-5 text-body-sm font-mono text-primary font-semibold">
+                          INS-{String(insp.id).padStart(4, '0')}
+                        </td>
+                        <td className="py-3 px-5 text-body-sm text-on-surface">
+                          {insp.product?.name || insp.product?.product_code || `#${insp.product_id}`}
+                        </td>
+                        <td className="py-3 px-5 text-body-sm text-on-surface-variant font-mono">
+                          {insp.batch?.batch_number || `#${insp.batch_id}`}
+                        </td>
+                        <td className="py-3 px-5">
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium border ${statusColor(insp.status)}`}>
+                            {insp.status.replace(/_/g, ' ').toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-3 px-5 text-body-sm text-on-surface-variant font-mono">
+                          {insp.image_count}
+                        </td>
+                        <td className="py-3 px-5 text-body-sm text-outline font-mono">
+                          {new Date(insp.inspection_timestamp).toLocaleString(undefined, {
+                            month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit',
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
-      </div>
 
-      {/* System Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              API Server
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <Server className="w-4 h-4" />
+        {/* ── Right Sidebar ── */}
+        <div className="space-y-6">
+
+          {/* FPY Gauge */}
+          <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">First Pass Yield</span>
+              <span className="material-symbols-outlined text-[18px] text-emerald-400">speed</span>
+            </div>
+            <div className="text-center py-4">
+              <div className="text-4xl font-bold font-mono text-emerald-400">
+                {fpy === '—' ? '—' : `${fpy}%`}
+              </div>
+              <p className="text-label-sm text-outline mt-2 font-mono">
+                {reviewedCount} / {totalInspections} inspections passed
+              </p>
+            </div>
+            <div className="w-full h-2 rounded-full bg-surface-container-high overflow-hidden mt-2">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-700"
+                style={{ width: fpy === '—' ? '0%' : `${Math.min(parseFloat(fpy), 100)}%` }}
+              />
             </div>
           </div>
-          <div className="text-xl font-bold text-white flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            {health?.status === 'healthy' ? 'Operational' : 'Connecting...'}
-          </div>
-          <p className="text-xs text-slate-400 mt-1">Python Flask REST API on port 5000</p>
-        </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Relational Database
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-              <Database className="w-4 h-4" />
+          {/* Station Activity */}
+          <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Station Activity</span>
+              <span className="px-2 py-0.5 rounded bg-tertiary/10 border border-tertiary/25 text-tertiary text-label-sm font-mono">
+                LIVE
+              </span>
+            </div>
+            <div className="space-y-2.5">
+              {STATIONS.map((stn, i) => {
+                const status = i < 3 ? 'ACTIVE' : 'IDLE';
+                const utilization = i < 3 ? 72 + i * 8 : 0;
+                return (
+                  <div key={stn} className="flex items-center gap-3">
+                    <span className={`w-2 h-2 rounded-full ${status === 'ACTIVE' ? 'bg-emerald-400 animate-pulse' : 'bg-outline/40'}`} />
+                    <span className="text-body-sm font-mono text-on-surface flex-1">{stn}</span>
+                    <span className={`text-label-sm font-mono ${status === 'ACTIVE' ? 'text-emerald-400' : 'text-outline'}`}>
+                      {status}
+                    </span>
+                    {status === 'ACTIVE' && (
+                      <div className="w-16 h-1.5 rounded-full bg-surface-container-high overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-emerald-500/70"
+                          style={{ width: `${utilization}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
-          <div className="text-xl font-bold text-white flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-emerald-400" />
-            {health?.database === 'connected' ? 'Connected' : 'Syncing'}
-          </div>
-          <p className="text-xs text-slate-400 mt-1">12 Models Migrated (Alembic)</p>
-        </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Session & Security
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-              <KeyRound className="w-4 h-4" />
+          {/* Batch Pipeline */}
+          <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Batch Pipeline</span>
+              <button
+                onClick={() => navigate('/products')}
+                className="text-label-sm text-primary font-mono hover:underline"
+              >
+                View →
+              </button>
+            </div>
+            {batches.length === 0 ? (
+              <p className="text-body-sm text-outline text-center py-4 font-mono">No batches registered</p>
+            ) : (
+              <div className="space-y-2">
+                {batches.slice(0, 6).map((b) => (
+                  <div
+                    key={b.id}
+                    className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-surface-container/30 transition-colors cursor-pointer"
+                    onClick={() => navigate('/products')}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="material-symbols-outlined text-[14px] text-outline">package_2</span>
+                      <span className="text-body-sm font-mono text-on-surface truncate">{b.batch_number}</span>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium border whitespace-nowrap ${batchStatusColor(b.status)}`}>
+                      {b.status.replace(/_/g, ' ').toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Role Permission Quick Card */}
+          <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="material-symbols-outlined text-[18px] text-primary">admin_panel_settings</span>
+              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Your Permissions</span>
+            </div>
+            <div className="space-y-2">
+              {[
+                { domain: 'Inspections', inspector: 'Create & Upload', supervisor: 'Create & Review', quality_manager: 'Full Access' },
+                { domain: 'Defect Actions', inspector: 'Confirm ML', supervisor: 'Fix Evidence', quality_manager: 'Close / Reopen' },
+                { domain: 'Batch Decisions', inspector: '—', supervisor: '—', quality_manager: 'Hold / Release' },
+                { domain: 'Audit Trail', inspector: '—', supervisor: '—', quality_manager: 'Full Read' },
+              ].map((row) => {
+                const perm = user?.role ? row[user.role as keyof typeof row] : '—';
+                return (
+                  <div key={row.domain} className="flex items-center justify-between py-1.5">
+                    <span className="text-body-sm text-on-surface-variant">{row.domain}</span>
+                    <span className={`text-label-sm font-mono ${perm === '—' ? 'text-outline/40' : 'text-primary'}`}>
+                      {perm}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
-          <div className="text-xl font-bold text-white flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-cyan-400" />
-            JWT RBAC Active
-          </div>
-          <p className="text-xs text-slate-400 mt-1">Bcrypt hash + Server-side permissions</p>
-        </div>
-      </div>
-
-      {/* Role Permission Matrix Card */}
-      <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-sm">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-indigo-400" />
-              Domain Model & Role Permission Matrix
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Enforced server-side for every endpoint. Backend never relies on frontend checks.
-            </p>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 font-mono">
-                <th className="pb-3 font-semibold">Workflow Domain</th>
-                <th className="pb-3 font-semibold text-cyan-400">Inspector / Operator</th>
-                <th className="pb-3 font-semibold text-amber-400">Production Supervisor</th>
-                <th className="pb-3 font-semibold text-emerald-400">Quality Manager</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              <tr>
-                <td className="py-3 font-medium text-white flex items-center gap-2">
-                  <Boxes className="w-3.5 h-3.5 text-indigo-400" />
-                  Products & Batches
-                </td>
-                <td className="py-3 text-slate-400">View Products & Batches</td>
-                <td className="py-3 text-slate-300">Create & Edit Batches</td>
-                <td className="py-3 text-emerald-300 font-medium">Full CRUD & Archival</td>
-              </tr>
-              <tr>
-                <td className="py-3 font-medium text-white flex items-center gap-2">
-                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                  Inspections & Evidence
-                </td>
-                <td className="py-3 text-cyan-300 font-medium">Create, Upload & Inspect</td>
-                <td className="py-3 text-slate-300">Create & Review</td>
-                <td className="py-3 text-slate-300">Full Access</td>
-              </tr>
-              <tr>
-                <td className="py-3 font-medium text-white flex items-center gap-2">
-                  <CheckCircle className="w-3.5 h-3.5 text-indigo-400" />
-                  Review & Defect Actions
-                </td>
-                <td className="py-3 text-slate-400">Confirm/Correct ML Suggestion</td>
-                <td className="py-3 text-amber-300 font-medium">Assign & Submit Fix Evidence</td>
-                <td className="py-3 text-emerald-300 font-medium">Close / Reopen Actions</td>
-              </tr>
-              <tr>
-                <td className="py-3 font-medium text-white flex items-center gap-2">
-                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-                  Batch Decisions
-                </td>
-                <td className="py-3 text-slate-600 font-mono">Restricted</td>
-                <td className="py-3 text-slate-600 font-mono">Restricted</td>
-                <td className="py-3 text-emerald-300 font-medium">Exclusive Hold/Release</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
     </div>

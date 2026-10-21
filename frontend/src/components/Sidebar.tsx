@@ -1,78 +1,56 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import {
-  LayoutDashboard,
-  Boxes,
-  Camera,
-  CheckSquare,
-  Wrench,
-  Lock,
-  History,
-  Users,
-  ShieldCheck,
-  ChevronRight,
-} from 'lucide-react';
+import { Lock } from 'lucide-react';
 
 interface NavItem {
   name: string;
   to: string;
-  icon: React.ElementType;
-  phase: string;
+  iconName: string;
+  badge?: string;
   allowedRoles?: string[];
 }
 
 const navItems: NavItem[] = [
   {
-    name: 'Overview',
+    name: 'Command Center',
     to: '/',
-    icon: LayoutDashboard,
-    phase: 'Phase 1',
+    iconName: 'dashboard',
   },
   {
-    name: 'Products & Batches',
-    to: '/products',
-    icon: Boxes,
-    phase: 'Phase 2',
-  },
-  {
-    name: 'Inspections & Upload',
+    name: 'Inspections & Runs',
     to: '/inspections',
-    icon: Camera,
-    phase: 'Phase 3',
+    iconName: 'fact_check',
+    badge: 'LIVE',
   },
   {
-    name: 'Human Review & Defects',
+    name: 'Defect Tracker & CAPA',
     to: '/reviews',
-    icon: CheckSquare,
-    phase: 'Phase 5',
+    iconName: 'bug_report',
+    badge: 'ACTIVE',
   },
   {
-    name: 'Corrective Actions',
-    to: '/corrective-actions',
-    icon: Wrench,
-    phase: 'Phase 5',
-    allowedRoles: ['supervisor', 'quality_manager'],
-  },
-  {
-    name: 'Batch Decisions',
+    name: 'Batch Releases & Gates',
     to: '/batch-decisions',
-    icon: ShieldCheck,
-    phase: 'Phase 6',
-    allowedRoles: ['quality_manager'],
+    iconName: 'verified',
+    badge: 'CFR-11',
+    allowedRoles: ['quality_manager', 'supervisor'],
   },
   {
-    name: 'Audit Trail',
+    name: 'Analytics & SPC Yield',
+    to: '/analytics',
+    iconName: 'query_stats',
+    badge: 'SPC',
+  },
+  {
+    name: 'Products & Lots',
+    to: '/products',
+    iconName: 'inventory_2',
+  },
+  {
+    name: 'Audit Event Log',
     to: '/audit',
-    icon: History,
-    phase: 'Phase 2+',
-    allowedRoles: ['quality_manager'],
-  },
-  {
-    name: 'User Management',
-    to: '/users',
-    icon: Users,
-    phase: 'Phase 1',
+    iconName: 'history_edu',
     allowedRoles: ['quality_manager'],
   },
 ];
@@ -81,88 +59,106 @@ export const Sidebar: React.FC = () => {
   const { user } = useAuth();
 
   return (
-    <aside className="w-64 border-r border-slate-800/80 bg-slate-900/40 backdrop-blur-sm flex flex-col flex-shrink-0">
-      <div className="p-4 flex-1 space-y-1 overflow-y-auto">
-        <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 px-3 py-2">
-          Navigation
+    <aside className="fixed left-0 top-14 bottom-0 w-64 bg-surface-container-lowest border-r border-surface-container-high z-40 flex flex-col justify-between p-space-md select-none overflow-y-auto">
+      <div className="flex flex-col gap-space-xs">
+        <div className="px-space-sm py-space-xs mb-space-xs">
+          <span className="text-label-sm uppercase tracking-widest text-outline font-mono font-semibold">
+            CONSOLE NAVIGATION
+          </span>
         </div>
 
-        {navItems.map((item) => {
-          const isAllowed = !item.allowedRoles || (user && item.allowedRoles.includes(user.role));
-          const Icon = item.icon;
+        <nav className="flex flex-col gap-1">
+          {navItems.map((item) => {
+            const isAllowed = !item.allowedRoles || (user && item.allowedRoles.includes(user.role));
 
-          if (!isAllowed) {
-            return (
-              <div
-                key={item.name}
-                className="flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-slate-600 cursor-not-allowed opacity-60"
-                title={`Requires ${item.allowedRoles?.join(', ')}`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className="w-4 h-4 text-slate-600" />
-                  <span>{item.name}</span>
+            if (!isAllowed) {
+              return (
+                <div
+                  key={item.to}
+                  className="flex items-center justify-between px-space-md py-space-sm rounded-lg text-body-md text-outline/50 cursor-not-allowed"
+                  title={`Restricted to ${item.allowedRoles?.join(', ')}`}
+                >
+                  <div className="flex items-center gap-space-sm">
+                    <span className="material-symbols-outlined text-[18px] opacity-40">
+                      {item.iconName}
+                    </span>
+                    <span>{item.name}</span>
+                  </div>
+                  <Lock className="w-3.5 h-3.5 opacity-40" />
                 </div>
-                <Lock className="w-3.5 h-3.5 text-slate-600" />
-              </div>
-            );
-          }
+              );
+            }
 
-          return (
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center justify-between px-space-md py-space-sm rounded-lg text-body-md transition-colors ${
+                    isActive
+                      ? 'bg-primary-container text-on-primary-container font-semibold border-l-2 border-primary shadow-sm'
+                      : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <div className="flex items-center gap-space-sm">
+                      <span
+                        className={`material-symbols-outlined text-[18px] ${
+                          isActive ? 'text-on-primary-container' : 'text-outline'
+                        }`}
+                      >
+                        {item.iconName}
+                      </span>
+                      <span>{item.name}</span>
+                    </div>
+
+                    {item.badge && (
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold tracking-wider ${
+                          isActive
+                            ? 'bg-primary text-on-primary'
+                            : 'bg-surface-container text-tertiary border border-outline-variant/30'
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* Bottom Section */}
+      <div className="flex flex-col gap-space-xs pt-space-md border-t border-surface-container-high">
+        {user?.role === 'quality_manager' && (
+          <nav className="flex flex-col gap-1 mb-2">
             <NavLink
-              key={item.name}
-              to={item.to}
-              end={item.to === '/'}
+              to="/users"
               className={({ isActive }) =>
-                `flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all group ${
+                `flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-body-md transition-colors ${
                   isActive
-                    ? 'bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                    ? 'bg-primary-container text-on-primary-container font-semibold border-l-2 border-primary'
+                    : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
                 }`
               }
             >
-              {({ isActive }) => (
-                <>
-                  <div className="flex items-center gap-3">
-                    <Icon
-                      className={`w-4 h-4 transition-colors ${
-                        isActive ? 'text-indigo-400' : 'text-slate-400 group-hover:text-slate-300'
-                      }`}
-                    />
-                    <span>{item.name}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                        isActive
-                          ? 'bg-indigo-500/20 text-indigo-300'
-                          : 'bg-slate-800/80 text-slate-400'
-                      }`}
-                    >
-                      {item.phase}
-                    </span>
-                    <ChevronRight
-                      className={`w-3 h-3 transition-transform ${
-                        isActive ? 'text-indigo-400 translate-x-0.5' : 'text-slate-600 opacity-0 group-hover:opacity-100'
-                      }`}
-                    />
-                  </div>
-                </>
-              )}
+              <span className="material-symbols-outlined text-[18px]">tune</span>
+              <span>User & Role Controls</span>
             </NavLink>
-          );
-        })}
-      </div>
+          </nav>
+        )}
 
-      {/* Role permission info banner */}
-      <div className="p-4 border-t border-slate-800/80 bg-slate-950/40">
-        <div className="text-[11px] text-slate-400">
-          <div className="font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            Backend RBAC Active
-          </div>
-          <p className="text-[10px] leading-relaxed text-slate-400">
-            Permissions strictly enforced on API endpoints. UI restrictions mirror backend access matrix.
-          </p>
+        <div className="px-space-md py-space-xs flex items-center justify-between text-outline">
+          <span className="text-label-sm font-mono text-tertiary flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+            CALIBRATION: PASS
+          </span>
+          <span className="text-label-sm font-mono">v4.1.2-QA</span>
         </div>
       </div>
     </aside>

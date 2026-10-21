@@ -2,11 +2,22 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../api/client';
 import type { HealthStatus } from '../types';
-import { LogOut, Activity, ShieldCheck, CheckCircle2, Layers } from 'lucide-react';
+import { LogOut, Radio } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const { user, logout } = useAuth();
   const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [utcTime, setUtcTime] = useState<string>('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setUtcTime(now.toTimeString().split(' ')[0] + ' UTC');
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -26,90 +37,74 @@ export const Navbar: React.FC = () => {
     };
   }, []);
 
-  const getRoleBadge = (role?: string) => {
+  const getRoleDisplayName = (role?: string) => {
     switch (role) {
       case 'quality_manager':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-            <ShieldCheck className="w-3 h-3" /> Quality Manager
-          </span>
-        );
+        return 'Quality Manager // Sector Lead';
       case 'supervisor':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center gap-1">
-            <Activity className="w-3 h-3" /> Production Supervisor
-          </span>
-        );
+        return 'Production Supervisor // Line 04';
       case 'inspector':
       default:
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Inspector / Operator
-          </span>
-        );
+        return 'Lead QA // Station 04';
     }
   };
 
   return (
-    <header className="h-16 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-40">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-black text-lg tracking-wider">
-            QI
+    <header className="fixed top-0 left-0 right-0 h-14 bg-surface-container-low border-b border-surface-container-high z-50 flex items-center justify-between px-margin select-none">
+      {/* Brand & Line Operational Telemetry */}
+      <div className="flex items-center gap-space-lg">
+        <div className="flex items-center gap-space-sm cursor-pointer">
+          <div className="w-8 h-8 rounded bg-gradient-to-tr from-amber-600 via-amber-500 to-amber-300 flex items-center justify-center font-bold text-black font-mono shadow-sm">
+            <span className="material-symbols-outlined text-[20px] text-black">analytics</span>
           </div>
-          <div>
-            <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
-              QITS
-              <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono font-medium border border-indigo-500/30">
-                Phase 1 MVP
-              </span>
-            </h1>
-            <p className="text-[11px] text-slate-400 leading-none">Inspection & Defect Tracking</p>
-          </div>
-        </div>
-
-        {/* Phase progress badge */}
-        <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-800/60 border border-slate-700/50 text-xs text-slate-300">
-          <Layers className="w-3.5 h-3.5 text-indigo-400" />
-          <span className="font-medium text-slate-400">Foundation:</span>
-          <span className="text-emerald-400 font-semibold">Active & Tested</span>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-4">
-        {/* Backend Health indicator */}
-        <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-800/60 border border-slate-700/60 text-xs">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              health?.status === 'healthy'
-                ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
-                : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]'
-            }`}
-          />
-          <span className="text-slate-300 font-medium">
-            API: {health?.status === 'healthy' ? 'Online' : 'Degraded'}
+          <span className="font-headline text-headline-md tracking-wider text-on-surface uppercase font-bold">
+            INSPECTRA
           </span>
-          {health?.database && (
-            <span className="text-[10px] text-slate-400 border-l border-slate-700 pl-2">
-              DB: {health.database}
+        </div>
+
+        <div className="h-4 w-px bg-surface-container-high hidden sm:block"></div>
+
+        <div className="hidden sm:flex items-center gap-space-sm">
+          <span className="px-space-sm py-0.5 rounded-full bg-surface-container border border-outline-variant/30 text-label-sm font-label-sm text-tertiary font-mono uppercase tracking-wider flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse"></span>
+            OPERATIONAL
+          </span>
+          <span className="px-space-sm py-0.5 rounded bg-surface-container-lowest border border-primary-container/40 text-label-sm font-label-sm text-primary font-mono uppercase tracking-wider flex items-center gap-1">
+            <Radio className="w-3 h-3 text-primary animate-pulse" />
+            LINE-04 ACTIVE
+          </span>
+          {health?.status === 'healthy' && (
+            <span className="hidden lg:inline-flex px-space-sm py-0.5 rounded bg-surface-container-lowest border border-outline-variant/30 text-label-sm font-mono text-outline uppercase">
+              API // SYNCED
             </span>
           )}
         </div>
+      </div>
 
-        {/* User Profile */}
+      {/* Clock & User Profile */}
+      <div className="flex items-center gap-space-md">
+        <div className="hidden md:flex items-center bg-surface-container-lowest border border-surface-container-high px-space-sm py-1 rounded text-on-surface-variant font-mono text-body-sm">
+          <span className="material-symbols-outlined text-[15px] mr-1.5 text-primary">schedule</span>
+          <span>SHIFT 02 (DAY) • {utcTime || '14:32:09 UTC'}</span>
+        </div>
+
         {user && (
           <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-semibold text-slate-200">{user.name}</div>
-              <div className="text-[11px] text-slate-400 font-mono">{user.email}</div>
+            <div className="hidden md:flex flex-col text-right">
+              <span className="text-label-md text-on-surface font-semibold">{user.name}</span>
+              <span className="text-label-sm text-on-surface-variant font-mono">
+                {getRoleDisplayName(user.role)}
+              </span>
             </div>
 
-            {getRoleBadge(user.role)}
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center font-mono font-bold text-on-primary text-xs shadow-sm">
+              {user.name.slice(0, 2).toUpperCase()}
+            </div>
 
             <button
               onClick={logout}
               title="Sign Out"
-              className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all ml-1"
+              className="p-1.5 rounded hover:bg-surface-container-high text-outline hover:text-error transition-colors"
             >
               <LogOut className="w-4 h-4" />
             </button>

@@ -1,122 +1,114 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './layouts/AppLayout';
 import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { UsersPage } from './pages/UsersPage';
-import { PlaceholderPage } from './pages/PlaceholderPage';
 
-import { ProductsBatchesPage } from './pages/ProductsBatchesPage';
-import { InspectionsPage } from './pages/InspectionsPage';
+/* ── Lazy-loaded page chunks ── */
+const InspectionsPage = React.lazy(() =>
+  import('./pages/InspectionsPage').then((m) => ({ default: m.InspectionsPage }))
+);
+const DefectTrackerPage = React.lazy(() =>
+  import('./pages/DefectTrackerPage').then((m) => ({ default: m.DefectTrackerPage }))
+);
+const BatchReleasesPage = React.lazy(() =>
+  import('./pages/BatchReleasesPage').then((m) => ({ default: m.BatchReleasesPage }))
+);
+const QualityAnalyticsPage = React.lazy(() =>
+  import('./pages/QualityAnalyticsPage').then((m) => ({ default: m.QualityAnalyticsPage }))
+);
+const AuditTrailPage = React.lazy(() =>
+  import('./pages/AuditTrailPage').then((m) => ({ default: m.AuditTrailPage }))
+);
+const ProductsBatchesPage = React.lazy(() =>
+  import('./pages/ProductsBatchesPage').then((m) => ({ default: m.ProductsBatchesPage }))
+);
+const UsersPage = React.lazy(() =>
+  import('./pages/UsersPage').then((m) => ({ default: m.UsersPage }))
+);
+const DashboardPage = React.lazy(() =>
+  import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage }))
+);
+
+/* ── Route loading fallback ── */
+const PageLoader: React.FC = () => (
+  <div className="flex flex-col items-center justify-center h-[60vh] gap-4 select-none">
+    <div className="relative w-10 h-10">
+      <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+      <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-primary animate-spin" />
+    </div>
+    <span className="text-body-sm font-mono text-outline uppercase tracking-widest">
+      Loading Module...
+    </span>
+  </div>
+);
 
 export const App: React.FC = () => {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <AppLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<DashboardPage />} />
-
-            <Route path="products" element={<ProductsBatchesPage />} />
-
-            <Route path="inspections" element={<InspectionsPage />} />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
 
             <Route
-              path="reviews"
+              path="/"
               element={
-                <PlaceholderPage
-                  title="Human Review & Defect Triage Queue"
-                  phase="Phase 5"
-                  description="Human-in-the-loop decision-support interface separating AI suggestions from human-confirmed outcomes."
-                  features={[
-                    'Side-by-side view of inspection image and ML suggestion score',
-                    'Confirm, Correct, No Defect, and Needs More Evidence review actions',
-                    'Independent human-confirmed defect persistence',
-                    'Model result immutability guarantee',
-                  ]}
-                />
-              }
-            />
-
-            <Route
-              path="corrective-actions"
-              element={
-                <ProtectedRoute allowedRoles={['supervisor', 'quality_manager']}>
-                  <PlaceholderPage
-                    title="Corrective Action Lifecycle"
-                    phase="Phase 5"
-                    description="Supervised corrective action workflows for tracking repairs and follow-up evidence."
-                    features={[
-                      'Action assignment with target dates and notes',
-                      'Supervisor repair evidence submission',
-                      'Linked reinspection generation',
-                      'Lifecycle state transitions: Open -> In Progress -> Completed -> Closed/Reopened',
-                    ]}
-                  />
+                <ProtectedRoute>
+                  <AppLayout />
                 </ProtectedRoute>
               }
-            />
+            >
+              {/* Command Center Dashboard is the landing page */}
+              <Route index element={<DashboardPage />} />
 
-            <Route
-              path="batch-decisions"
-              element={
-                <ProtectedRoute allowedRoles={['quality_manager']}>
-                  <PlaceholderPage
-                    title="Separate Batch Hold / Release Workspace"
-                    phase="Phase 6"
-                    description="Independent quality management decision interface based on comprehensive batch inspection metrics."
-                    features={[
-                      'Batch item inspection counts, reviewed counts, and confirmed defect rates',
-                      'Explicit human hold or release decisions with mandatory justification reason',
-                      'Strict separation: individual image outcomes never automatically trigger batch releases',
-                      'Full immutable audit log of quality decisions',
-                    ]}
-                  />
-                </ProtectedRoute>
-              }
-            />
+              {/* Inspection Runs & Station Telemetry Console */}
+              <Route path="inspections" element={<InspectionsPage />} />
 
-            <Route
-              path="audit"
-              element={
-                <ProtectedRoute allowedRoles={['quality_manager']}>
-                  <PlaceholderPage
-                    title="System Audit Trail & Event Log"
-                    phase="Phase 2+"
-                    description="Immutable timeline of all state transitions, user decisions, and model inference runs."
-                    features={[
-                      'Structured change logging with actor ID and correlation IDs',
-                      'Filterable by entity type (Product, Batch, Inspection, Review, Decision)',
-                      'Audit export and compliance traceability',
-                    ]}
-                  />
-                </ProtectedRoute>
-              }
-            />
+              {/* Defect Tracker & Root Cause CAPA Workstation */}
+              <Route path="reviews" element={<DefectTrackerPage />} />
 
-            <Route
-              path="users"
-              element={
-                <ProtectedRoute allowedRoles={['quality_manager']}>
-                  <UsersPage />
-                </ProtectedRoute>
-              }
-            />
-          </Route>
+              {/* Batch Releases & 21 CFR Part 11 Quality Gates */}
+              <Route
+                path="batch-decisions"
+                element={
+                  <ProtectedRoute allowedRoles={['quality_manager', 'supervisor']}>
+                    <BatchReleasesPage />
+                  </ProtectedRoute>
+                }
+              />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+              {/* Statistical Process Control & Pareto Yield Analytics */}
+              <Route path="analytics" element={<QualityAnalyticsPage />} />
+
+              {/* Products & Lots Catalog */}
+              <Route path="products" element={<ProductsBatchesPage />} />
+
+              {/* 21 CFR Part 11 Audit Trail & Ledger */}
+              <Route
+                path="audit"
+                element={
+                  <ProtectedRoute allowedRoles={['quality_manager']}>
+                    <AuditTrailPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* User Management */}
+              <Route
+                path="users"
+                element={
+                  <ProtectedRoute allowedRoles={['quality_manager']}>
+                    <UsersPage />
+                  </ProtectedRoute>
+                }
+              />
+            </Route>
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   );
