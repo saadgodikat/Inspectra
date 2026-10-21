@@ -131,6 +131,10 @@ class Inspection(db.Model):
                     "role": self.inspector.role,
                 }
             data["images"] = [img.to_dict() for img in self.images.order_by(db.asc("id")).all()]
+            try:
+                data["ml_results"] = [r.to_dict() for r in self.ml_results.order_by(db.asc("id")).all()]
+            except Exception:
+                data["ml_results"] = []
         return data
 
     def __repr__(self):

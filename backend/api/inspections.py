@@ -1,7 +1,7 @@
 """Inspections API endpoints — intake, image uploads, secure evidence delivery, and listing."""
 
 from datetime import datetime, timezone, date
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, jsonify, request, send_file, current_app
 from sqlalchemy import or_
 
 from backend.extensions import db
@@ -13,6 +13,7 @@ from backend.middleware.permissions import require_permission
 from backend.middleware.errors import NotFoundError, ValidationError, ForbiddenError
 from backend.services.audit_service import log_audit_event
 from backend.services.file_service import save_inspection_image, get_image_file_path
+from backend.services.ml_service import process_inspection_image_ml
 
 inspections_bp = Blueprint("inspections", __name__, url_prefix="/api/inspections")
 
@@ -304,6 +305,15 @@ def upload_inspection_images(inspection_id, current_user):
             sample_type=sample_type,
         )
         if image_record:
+            # Process ML inference in a nested transaction (savepoint)
+            # so one failed prediction does not roll back the image record or other images
+            try:
+                with db.session.begin_nested():
+                    process_inspection_image_ml(image_record)
+            except Exception as ml_err:
+                current_app.logger.error(
+                    f"ML inference transaction error for image {image_record.id}: {str(ml_err)}"
+                )
             succeeded.append(image_record.to_dict())
         else:
             failed.append(error_dict)

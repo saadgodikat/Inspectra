@@ -43,8 +43,8 @@ class InspectionImage(db.Model):
     uploaded_by = db.relationship("User", foreign_keys=[uploaded_by_id])
     ml_results = db.relationship("MLResult", back_populates="image", lazy="dynamic")
 
-    def to_dict(self) -> dict:
-        return {
+    def to_dict(self, include_ml: bool = True) -> dict:
+        data = {
             "id": self.id,
             "inspection_id": self.inspection_id,
             "original_filename": self.original_filename,
@@ -59,6 +59,14 @@ class InspectionImage(db.Model):
             "processing_state": self.processing_state,
             "failure_reason": self.failure_reason,
         }
+        if include_ml:
+            try:
+                if self.ml_results is not None:
+                    latest = self.ml_results.order_by(db.desc("id")).first()
+                    data["ml_result"] = latest.to_dict() if latest else None
+            except Exception:
+                data["ml_result"] = None
+        return data
 
     def __repr__(self):
         return f"<InspectionImage {self.id} [{self.processing_state}]>"
