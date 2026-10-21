@@ -1,0 +1,31 @@
+dataset_name: "casting_product_binary"
+dataset_path: "ml/data/raw/casting_data"
+report_output: "ml/reports/dataset_audit.md"
+
+# Canonical labels supported by the binary inspection model
+target_labels:
+  - "good"
+  - "defective"
+
+# Flexible label mapping to normalize raw folder/file naming
+label_mapping:
+  "ok_front": "good"
+  "def_front": "defective"
+  "ok": "good"
+  "def": "defective"
+  "good": "good"
+  "defective": "defective"
+
+supported_extensions:
+  - ".jpg"
+  - ".jpeg"
+  - ".png"
+  - ".webp"
+  - ".bmp"
+  - ".tiff"
+
+# Baseline model parameters (Phase ML-3 reference)
+model:
+  backbone: "dinov2_vits14"
+  input_resolution: [224, 224]
+  random_seed: 42

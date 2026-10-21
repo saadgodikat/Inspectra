@@ -1,0 +1,9 @@
+# Inspectra ML Subsystem Requirements
+# Decoupled from backend/requirements.txt
+
+torch>=2.0.0
+torchvision>=0.15.0
+pillow>=10.0.0
+pyyaml>=6.0
+scikit-learn>=1.3.0
+pytest>=8.0.0

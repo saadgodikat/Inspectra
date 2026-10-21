@@ -1,0 +1,62 @@
+{
+  "seed": 42,
+  "target_ratios": {
+    "train": 0.7,
+    "val": 0.15,
+    "test": 0.15
+  },
+  "total_files": 7348,
+  "total_unique_hashes": 7284,
+  "total_duplicate_groups": 64,
+  "total_duplicate_redundant_files": 64,
+  "splits": {
+    "train": {
+      "total_files": 5147,
+      "unique_hashes": 5099,
+      "file_percentage": 70.05,
+      "hash_percentage": 70.0,
+      "duplicate_files_in_split": 96,
+      "duplicate_groups_in_split": 48,
+      "class_file_counts": {
+        "defective": 2948,
+        "good": 2199
+      },
+      "class_hash_counts": {
+        "defective": 2948,
+        "good": 2151
+      }
+    },
+    "val": {
+      "total_files": 1100,
+      "unique_hashes": 1093,
+      "file_percentage": 14.97,
+      "hash_percentage": 15.01,
+      "duplicate_files_in_split": 14,
+      "duplicate_groups_in_split": 7,
+      "class_file_counts": {
+        "defective": 632,
+        "good": 468
+      },
+      "class_hash_counts": {
+        "defective": 632,
+        "good": 461
+      }
+    },
+    "test": {
+      "total_files": 1101,
+      "unique_hashes": 1092,
+      "file_percentage": 14.98,
+      "hash_percentage": 14.99,
+      "duplicate_files_in_split": 18,
+      "duplicate_groups_in_split": 9,
+      "class_file_counts": {
+        "defective": 631,
+        "good": 470
+      },
+      "class_hash_counts": {
+        "defective": 631,
+        "good": 461
+      }
+    }
+  }
+}

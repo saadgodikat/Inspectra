@@ -30,7 +30,9 @@ instance/
 uploads/
 
 # ML data & checkpoints
-data/
+/data/
+ml/data/raw/
+ml/artifacts/
 *.pth
 *.pt
 *.onnx
