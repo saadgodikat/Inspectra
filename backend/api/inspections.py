@@ -17,6 +17,8 @@ from backend.middleware.errors import NotFoundError, ValidationError, ForbiddenE
 from backend.services.audit_service import log_audit_event
 from backend.services.file_service import save_inspection_image, get_image_file_path
 from backend.services.ml_service import process_inspection_image_ml
+from inspectra_ml.multiclass_inference import predict_multiclass_image
+import os
 
 inspections_bp = Blueprint("inspections", __name__, url_prefix="/api/inspections")
 
@@ -420,3 +422,49 @@ def get_ml_results(inspection_id, current_user):
         "ml_results": [r.to_dict() for r in results],
         "count": len(results),
     }), 200
+
+@inspections_bp.route("/<int:inspection_id>/multiclass-results", methods=["GET"])
+@require_permission("inspection.view")
+def get_multiclass_results(inspection_id, current_user):
+    """Run multiclass inference on each image of an inspection and return results.
+
+    Returns a list of prediction dicts per image, mirroring the MLResult schema but for multiclass.
+    """
+    inspection = db.session.get(Inspection, inspection_id)
+    if not inspection:
+        raise NotFoundError("Inspection not found")
+
+    images = db.session.query(InspectionImage).filter_by(inspection_id=inspection_id).all()
+    results = []
+    for img in images:
+        file_path = get_image_file_path(img)
+        if not file_path or not os.path.isfile(file_path):
+            result = {
+                "image_id": img.id,
+                "status": "failed",
+                "error_code": "FILE_MISSING",
+                "error_details": "Image file missing on disk.",
+            }
+            results.append(result)
+            continue
+        pred = predict_multiclass_image(file_path)
+        result = {
+            "image_id": img.id,
+            "status": pred.get("status"),
+            "predicted_class": pred.get("predicted_class"),
+            "probabilities": pred.get("probabilities"),
+            "confidence": pred.get("confidence"),
+            "model_name": pred.get("model_name"),
+            "model_version": pred.get("model_version"),
+            "processing_duration_ms": pred.get("processing_duration_ms"),
+            "error_code": pred.get("error_code"),
+            "error_details": pred.get("error_details"),
+        }
+        results.append(result)
+
+    return jsonify({
+        "inspection_id": inspection_id,
+        "multiclass_results": results,
+        "count": len(results),
+    }), 200
+
