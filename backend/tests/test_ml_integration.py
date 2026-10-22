@@ -489,3 +489,140 @@ class TestMLBackendIntegration:
         assert res.status == MLResultStatus.FAILED.value
         assert fake_img.processing_state == ImageProcessingState.FAILED.value
         assert "missing or inaccessible" in res.error_details
+
+
+class TestMulticlassEndpoint:
+    """Tests for the GET /<inspection_id>/multiclass-results endpoint."""
+
+    def _make_inspection(self, db, inspector_user):
+        prod = Product(product_code="PRD-MC-01", name="Casting MC", is_active=True)
+        db.session.add(prod)
+        db.session.flush()
+        batch = Batch(batch_number="BAT-MC-01", product_id=prod.id, status="under_inspection")
+        db.session.add(batch)
+        db.session.flush()
+        insp = Inspection(
+            product_id=prod.id,
+            batch_id=batch.id,
+            inspector_id=inspector_user.id,
+            status=InspectionStatus.PENDING_UPLOAD.value,
+        )
+        db.session.add(insp)
+        db.session.commit()
+        return insp
+
+    def test_multiclass_route_registered_no_images(self, client, inspector_user, db):
+        """Route is registered and returns expected JSON shape (empty inspection)."""
+        insp = self._make_inspection(db, inspector_user)
+        headers = get_auth_headers(client, email=inspector_user.email, password="testpass123")
+
+        resp = client.get(f"/api/inspections/{insp.id}/multiclass-results", headers=headers)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "multiclass_results" in data
+        assert "count" in data
+        assert "inspection_id" in data
+        assert data["inspection_id"] == insp.id
+        assert data["count"] == 0
+        assert data["multiclass_results"] == []
+
+    def test_multiclass_route_missing_inspection(self, client, inspector_user, db):
+        """Returns 404 for a non-existent inspection."""
+        headers = get_auth_headers(client, email=inspector_user.email, password="testpass123")
+        resp = client.get("/api/inspections/999999/multiclass-results", headers=headers)
+        assert resp.status_code == 404
+
+    def test_multiclass_route_with_image_missing_on_disk(self, client, inspector_user, db):
+        """Images with no file on disk are reported as FILE_MISSING failures."""
+        insp = self._make_inspection(db, inspector_user)
+
+        # Insert a fake image record whose file does NOT exist on disk
+        fake_img = InspectionImage(
+            inspection_id=insp.id,
+            storage_path="inspections/nonexistent/mc_fake.jpg",
+            original_filename="mc_fake.jpg",
+            content_type="image/jpeg",
+            file_size=100,
+            file_hash="mc_fake_hash",
+            uploaded_by_id=inspector_user.id,
+        )
+        db.session.add(fake_img)
+        db.session.commit()
+
+        headers = get_auth_headers(client, email=inspector_user.email, password="testpass123")
+        resp = client.get(f"/api/inspections/{insp.id}/multiclass-results", headers=headers)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["count"] == 1
+        entry = data["multiclass_results"][0]
+        assert entry["image_id"] == fake_img.id
+        assert entry["status"] == "failed"
+        assert entry["error_code"] == "FILE_MISSING"
+
+    def test_multiclass_route_with_mocked_inference(self, client, inspector_user, db, tmp_path):
+        """Successful inference returns expected fields per image."""
+        from PIL import Image as PILImage
+        from unittest.mock import patch
+
+        insp = self._make_inspection(db, inspector_user)
+
+        # Write a real image to tmp_path so os.path.isfile passes
+        img_file = tmp_path / "mc_test.jpg"
+        pil_img = PILImage.new("RGB", (64, 64), color=(0, 128, 255))
+        pil_img.save(str(img_file), format="JPEG")
+
+        fake_img = InspectionImage(
+            inspection_id=insp.id,
+            storage_path="inspections/mc/mc_test.jpg",
+            original_filename="mc_test.jpg",
+            content_type="image/jpeg",
+            file_size=img_file.stat().st_size,
+            file_hash="mc_test_hash",
+            uploaded_by_id=inspector_user.id,
+        )
+        db.session.add(fake_img)
+        db.session.commit()
+
+        mock_pred = {
+            "status": "success",
+            "predicted_class": "CRACK",
+            "probabilities": {
+                "GOOD": 0.05,
+                "CRACK": 0.80,
+                "DENT": 0.05,
+                "SCRATCH": 0.05,
+                "OTHER_DEFECT": 0.05,
+            },
+            "confidence": 0.80,
+            "model_name": "efficientnet_b0_multiclass_defect",
+            "model_version": "v1.0.0",
+            "processing_duration_ms": 42.0,
+            "error_code": None,
+            "error_details": None,
+        }
+
+        headers = get_auth_headers(client, email=inspector_user.email, password="testpass123")
+
+        # Mock both get_image_file_path (to return a valid path) and predict_multiclass_image
+        with patch(
+            "backend.api.inspections.get_image_file_path", return_value=str(img_file)
+        ), patch(
+            "backend.api.inspections.predict_multiclass_image", return_value=mock_pred
+        ):
+            resp = client.get(
+                f"/api/inspections/{insp.id}/multiclass-results", headers=headers
+            )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["count"] == 1
+        entry = data["multiclass_results"][0]
+        assert entry["image_id"] == fake_img.id
+        assert entry["status"] == "success"
+        assert entry["predicted_class"] == "CRACK"
+        assert entry["probabilities"]["CRACK"] == 0.80
+        assert entry["confidence"] == 0.80
+        assert entry["model_name"] == "efficientnet_b0_multiclass_defect"
+        assert entry["error_code"] is None

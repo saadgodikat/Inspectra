@@ -18,6 +18,22 @@ IDX_TO_LABEL = {
     1: "defective",
 }
 
+MULTICLASS_LABEL_TO_IDX = {
+    "GOOD": 0,
+    "CRACK": 1,
+    "DENT": 2,
+    "SCRATCH": 3,
+    "OTHER_DEFECT": 4,
+}
+
+MULTICLASS_IDX_TO_LABEL = {
+    0: "GOOD",
+    1: "CRACK",
+    2: "DENT",
+    3: "SCRATCH",
+    4: "OTHER_DEFECT",
+}
+
 # ImageNet normalization standard
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -120,3 +136,46 @@ class CastingManifestDataset(Dataset):
 
         label_idx = LABEL_TO_IDX[rec["label"]]
         return image, label_idx, img_rel_path
+
+
+class MulticlassManifestDataset(Dataset):
+    """PyTorch Dataset loading images for multiclass defect inspection."""
+
+    def __init__(
+        self,
+        manifest_path: Path,
+        repo_root: Optional[Path] = None,
+        transform: Optional[Callable] = None,
+    ):
+        if repo_root is None:
+            # ml/src/inspectra_ml/dataset.py -> repo_root is parents[3]
+            repo_root = Path(__file__).resolve().parents[3]
+        self.repo_root = Path(repo_root).resolve()
+        self.transform = transform
+        self.records: List[Dict[str, Any]] = []
+
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                self.records.append(row)
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int, str]:
+        rec = self.records[idx]
+        img_rel_path = rec["file_path"]
+        img_full_path = self.repo_root / img_rel_path
+
+        if not img_full_path.exists():
+            raise FileNotFoundError(f"Image file does not exist: {img_full_path}")
+
+        with Image.open(img_full_path) as img:
+            image = img.convert("RGB")
+
+        if self.transform:
+            image = self.transform(image)
+
+        label_idx = MULTICLASS_LABEL_TO_IDX[rec["label"]]
+        return image, label_idx, img_rel_path
+
