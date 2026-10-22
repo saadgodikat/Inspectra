@@ -1,0 +1,37 @@
+# Inspectra Multiclass Defect Classification Configuration
+dataset_name: "synthetic_industrial_defects_and_casting_good"
+report_output: "ml/reports/synthetic_defects_audit.md"
+
+target_labels:
+  - "GOOD"
+  - "CRACK"
+  - "DENT"
+  - "SCRATCH"
+  - "OTHER_DEFECT"
+
+class_mapping:
+  0: "GOOD"
+  1: "CRACK"
+  2: "DENT"
+  3: "SCRATCH"
+  4: "OTHER_DEFECT"
+
+source_synthetic_mapping:
+  0: "SCRATCH"
+  1: "DENT"
+  2: "CRACK"
+  3: "OTHER_DEFECT"  # Corrosion
+  4: "OTHER_DEFECT"  # Discoloration
+
+training:
+  backbone: "efficientnet_b0"
+  num_classes: 5
+  epochs: 5
+  batch_size: 16
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  dropout: 0.2
+  input_resolution: [224, 224]
+  random_seed: 42
+  checkpoint_path: "ml/artifacts/multiclass_defect_model.pth"
+  history_path: "ml/artifacts/multiclass_training_history.json"
