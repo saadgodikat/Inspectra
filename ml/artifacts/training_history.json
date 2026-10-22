@@ -1,0 +1,85 @@
+{
+  "best_epoch": 3,
+  "default_val_metrics": {
+    "threshold": 0.5,
+    "positive_class": "defective (1)",
+    "negative_class": "good (0)",
+    "total_samples": 1093,
+    "accuracy": 0.9597,
+    "precision": 0.9851,
+    "recall": 0.9446,
+    "f1": 0.9645,
+    "roc_auc": 0.9944,
+    "confusion_matrix": {
+      "tn": 452,
+      "fp": 9,
+      "fn": 35,
+      "tp": 597
+    }
+  },
+  "optimal_threshold": 0.38,
+  "optimal_val_metrics": {
+    "threshold": 0.38,
+    "positive_class": "defective (1)",
+    "negative_class": "good (0)",
+    "total_samples": 1093,
+    "accuracy": 0.9707,
+    "precision": 0.9702,
+    "recall": 0.9794,
+    "f1": 0.9748,
+    "roc_auc": 0.9944,
+    "confusion_matrix": {
+      "tn": 442,
+      "fp": 19,
+      "fn": 13,
+      "tp": 619
+    }
+  },
+  "training_params": {
+    "data_dir": "ml/data/raw/casting_data",
+    "splits_dir": "ml/data/splits",
+    "artifacts_dir": "ml/artifacts",
+    "epochs": 3,
+    "batch_size": 64,
+    "lr": 0.001,
+    "seed": 42,
+    "use_primary_only": true,
+    "freeze_backbone": true,
+    "report_output": "ml/reports/baseline_training.md"
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "train_loss": 0.4629,
+      "val_loss": 0.3104,
+      "val_accuracy": 0.9186,
+      "val_precision": 0.9738,
+      "val_recall": 0.8829,
+      "val_f1": 0.9261,
+      "val_roc_auc": 0.9839,
+      "duration_sec": 94.24
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.2915,
+      "val_loss": 0.2111,
+      "val_accuracy": 0.9515,
+      "val_precision": 0.9833,
+      "val_recall": 0.932,
+      "val_f1": 0.9569,
+      "val_roc_auc": 0.9921,
+      "duration_sec": 93.31
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.2282,
+      "val_loss": 0.1684,
+      "val_accuracy": 0.9597,
+      "val_precision": 0.9851,
+      "val_recall": 0.9446,
+      "val_f1": 0.9645,
+      "val_roc_auc": 0.9944,
+      "duration_sec": 96.21
+    }
+  ]
+}
