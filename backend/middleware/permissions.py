@@ -54,6 +54,10 @@ PERMISSION_MATRIX: dict[str, set[str]] = {
         UserRole.SUPERVISOR.value,
         UserRole.QUALITY_MANAGER.value,
     },
+    "inspection_item.override": {
+        UserRole.SUPERVISOR.value,
+        UserRole.QUALITY_MANAGER.value,
+    },
 
     # --- Reviews ---
     "review.create": {

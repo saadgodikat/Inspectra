@@ -19,29 +19,11 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
-
     try {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err: any) {
-      const msg = err.response?.data?.error || 'Authentication failed. Please verify credentials.';
-      setError(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDemoLogin = async (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setError(null);
-    setIsSubmitting(true);
-    try {
-      await login(demoEmail, demoPass);
-      navigate(from, { replace: true });
-    } catch (err: any) {
-      const msg = err.response?.data?.error || 'Demo login failed.';
-      setError(msg);
+      setError(err.response?.data?.error || 'Authentication failed. Please verify credentials.');
     } finally {
       setIsSubmitting(false);
     }
@@ -123,38 +105,7 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Rapid Demo Login Triggers */}
-          <div className="mt-6 pt-5 border-t border-surface-container-high">
-            <span className="block text-label-sm font-mono uppercase text-outline text-center mb-3">
-              One-Click Terminal Demo Access
-            </span>
-            <div className="grid grid-cols-3 gap-2 font-mono text-[11px]">
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('carol@example.com', 'qualitymgr123')}
-                className="p-2 rounded bg-surface-container hover:bg-surface-container-high border border-outline-variant/30 text-center transition-colors cursor-pointer"
-              >
-                <span className="text-primary font-bold block">MANAGER</span>
-                <span className="text-outline text-[9px]">Carol QualityMgr</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('bob@example.com', 'supervisor123')}
-                className="p-2 rounded bg-surface-container hover:bg-surface-container-high border border-outline-variant/30 text-center transition-colors cursor-pointer"
-              >
-                <span className="text-secondary font-bold block">SUPERVISOR</span>
-                <span className="text-outline text-[9px]">Bob Supervisor</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('alice@example.com', 'inspector123')}
-                className="p-2 rounded bg-surface-container hover:bg-surface-container-high border border-outline-variant/30 text-center transition-colors cursor-pointer"
-              >
-                <span className="text-tertiary font-bold block">INSPECTOR</span>
-                <span className="text-outline text-[9px]">Alice Inspector</span>
-              </button>
-            </div>
-          </div>
+
         </div>
 
         <div className="mt-4 text-center">

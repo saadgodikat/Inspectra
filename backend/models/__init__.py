@@ -13,3 +13,4 @@ from backend.models.corrective_action_evidence import CorrectiveActionEvidence  
 from backend.models.batch_decision import BatchDecision  # noqa: F401
 from backend.models.audit_event import AuditEvent  # noqa: F401
 from backend.models.genai_report import GenAIReport  # noqa: F401
+from backend.models.inspection_item import InspectionItem  # noqa: F401

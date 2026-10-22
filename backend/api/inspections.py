@@ -7,8 +7,11 @@ from sqlalchemy import or_
 from backend.extensions import db
 from backend.models.inspection import Inspection, InspectionStatus, SampleType
 from backend.models.inspection_image import InspectionImage
+from backend.models.inspection_item import InspectionItem, ItemStatus
+from backend.models.ml_result import MLResult
 from backend.models.product import Product
 from backend.models.batch import Batch, BatchStatus
+from backend.models.user import UserRole
 from backend.middleware.permissions import require_permission
 from backend.middleware.errors import NotFoundError, ValidationError, ForbiddenError
 from backend.services.audit_service import log_audit_event
@@ -126,7 +129,7 @@ def get_inspection(inspection_id, current_user):
 def create_inspection(current_user):
     """Create a new inspection intake linked to an active product and batch.
 
-    Body: { product_id, batch_id, sample_reference?, sample_type?, observations? }
+    Body: { product_id, batch_id, quantity?, sample_reference?, sample_type?, observations? }
     """
     data = request.get_json(silent=True)
     if not data:
@@ -137,8 +140,10 @@ def create_inspection(current_user):
     sample_reference = (data.get("sample_reference") or "").strip() or None
     sample_type = (data.get("sample_type") or SampleType.ITEM.value).strip().lower()
     observations = (data.get("observations") or "").strip() or None
+    requested_quantity = data.get("quantity")
 
     errors: dict[str, str] = {}
+    batch = None
 
     if not product_id:
         errors["product_id"] = "Product ID is required"
@@ -166,6 +171,21 @@ def create_inspection(current_user):
     if errors:
         raise ValidationError("Validation failed", details=errors)
 
+    batch_quantity = batch.quantity or 0
+    quantity = batch_quantity
+    if requested_quantity is not None:
+        if isinstance(requested_quantity, bool) or not isinstance(requested_quantity, int):
+            errors["quantity"] = "Quantity must be a whole number"
+        elif requested_quantity < 1:
+            errors["quantity"] = "Quantity must be at least 1"
+        elif batch.quantity is not None and requested_quantity > batch_quantity:
+            errors["quantity"] = "Quantity cannot exceed the selected batch quantity"
+        else:
+            quantity = requested_quantity
+
+    if errors:
+        raise ValidationError("Validation failed", details=errors)
+
     inspection = Inspection(
         product_id=product_id,
         batch_id=batch_id,
@@ -179,6 +199,15 @@ def create_inspection(current_user):
     db.session.add(inspection)
     db.session.flush()
 
+    # Auto-allocate item slots based on batch quantity
+    if quantity > 0:
+        for n in range(1, quantity + 1):
+            db.session.add(InspectionItem(
+                inspection_id=inspection.id,
+                item_number=n,
+                status=ItemStatus.PENDING_UPLOAD,
+            ))
+
     # Log audit event
     log_audit_event(
         actor_id=current_user.id,
@@ -190,6 +219,7 @@ def create_inspection(current_user):
             "batch_id": inspection.batch_id,
             "sample_reference": inspection.sample_reference,
             "sample_type": inspection.sample_type,
+            "items_allocated": quantity,
         },
     )
     db.session.commit()
@@ -213,7 +243,7 @@ def update_inspection_draft(inspection_id, current_user):
         raise NotFoundError("Inspection not found")
 
     # Only creator, supervisor, or quality manager can edit draft
-    if current_user.role == "inspector" and inspection.inspector_id != current_user.id:
+    if current_user.role == UserRole.INSPECTOR.value and inspection.inspector_id != current_user.id:
         raise ForbiddenError("You can only edit your own inspection drafts")
 
     # Disallow modifications to finalized inspections
@@ -374,3 +404,19 @@ def get_inspection_image_file(inspection_id, image_id, current_user):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Cache-Control"] = "private, max-age=86400"
     return response
+
+
+@inspections_bp.route("/<int:inspection_id>/ml-results", methods=["GET"])
+@require_permission("inspection.view")
+def get_ml_results(inspection_id, current_user):
+    """Return all ML inference results for an inspection."""
+    inspection = db.session.get(Inspection, inspection_id)
+    if not inspection:
+        raise NotFoundError("Inspection not found")
+
+    results = MLResult.query.filter_by(inspection_id=inspection_id).order_by(MLResult.created_at.asc()).all()
+    return jsonify({
+        "inspection_id": inspection_id,
+        "ml_results": [r.to_dict() for r in results],
+        "count": len(results),
+    }), 200

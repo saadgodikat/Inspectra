@@ -74,6 +74,7 @@ class Inspection(db.Model):
         "HumanReview", back_populates="inspection", lazy="dynamic"
     )
     defects = db.relationship("Defect", back_populates="inspection", lazy="dynamic")
+    items = db.relationship("InspectionItem", back_populates="inspection", lazy="dynamic")
 
     # Reinspection chain
     reinspection_of = db.relationship(

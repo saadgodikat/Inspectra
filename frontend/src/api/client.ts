@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AuthResponse, HealthStatus, User, Product, Batch, Inspection, InspectionImage } from '../types';
+import type { AuthResponse, HealthStatus, User, Product, Batch, Inspection, InspectionImage, ItemsResponse, BulkUploadResult, AnalysisResult, InspectionItem } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -38,13 +38,13 @@ api.interceptors.response.use(
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           localStorage.removeItem('user');
-          window.location.href = '/login';
+          window.location.href = '/';
         }
       } else {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        window.location.href = '/';
       }
     }
     return Promise.reject(error);
@@ -52,12 +52,8 @@ api.interceptors.response.use(
 );
 
 export const authApi = {
-  login: async (email: string, password: string): Promise<AuthResponse> => {
-    const res = await api.post<AuthResponse>('/auth/login', { email, password });
-    return res.data;
-  },
-  register: async (data: { name: string; email: string; password: string; role?: string }): Promise<AuthResponse> => {
-    const res = await api.post<AuthResponse>('/auth/register', data);
+  switchRole: async (role: string): Promise<AuthResponse> => {
+    const res = await api.post<AuthResponse>('/auth/switch-role', { role });
     return res.data;
   },
   getMe: async (): Promise<{ user: User }> => {
@@ -165,6 +161,7 @@ export const inspectionsApi = {
   create: async (data: {
     product_id: number;
     batch_id: number;
+    quantity?: number;
     sample_reference?: string;
     sample_type?: string;
     observations?: string;
@@ -209,6 +206,34 @@ export const inspectionsApi = {
       responseType: 'blob',
     });
     return URL.createObjectURL(res.data);
+  },
+  getItems: async (inspectionId: number): Promise<ItemsResponse> => {
+    const res = await api.get<ItemsResponse>(`/inspections/${inspectionId}/items`);
+    return res.data;
+  },
+  bulkUpload: async (inspectionId: number, files: File[]): Promise<BulkUploadResult> => {
+    const formData = new FormData();
+    files.forEach((f) => formData.append('images', f));
+    const res = await api.post<BulkUploadResult>(`/inspections/${inspectionId}/bulk-upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
+  runAnalysis: async (inspectionId: number): Promise<AnalysisResult> => {
+    const res = await api.post<AnalysisResult>(`/inspections/${inspectionId}/run-analysis`);
+    return res.data;
+  },
+  overrideItem: async (
+    inspectionId: number,
+    itemNumber: number,
+    decision: 'good' | 'defective',
+    comment?: string
+  ): Promise<{ message: string; item: InspectionItem }> => {
+    const res = await api.patch<{ message: string; item: InspectionItem }>(
+      `/inspections/${inspectionId}/items/${itemNumber}/override`,
+      { decision, comment }
+    );
+    return res.data;
   },
 };
 

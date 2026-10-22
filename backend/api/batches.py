@@ -7,8 +7,9 @@ from sqlalchemy import or_
 from backend.extensions import db
 from backend.models.batch import Batch, BatchStatus
 from backend.models.product import Product
+from backend.models.user import UserRole
 from backend.middleware.permissions import require_permission
-from backend.middleware.errors import NotFoundError, ValidationError, ConflictError
+from backend.middleware.errors import NotFoundError, ValidationError, ConflictError, ForbiddenError
 from backend.services.audit_service import log_audit_event
 
 batches_bp = Blueprint("batches", __name__, url_prefix="/api/batches")
@@ -19,16 +20,20 @@ VALID_STATUSES = {s.value for s in BatchStatus}
 @batches_bp.route("", methods=["GET"])
 @require_permission("batch.view")
 def list_batches(current_user):
-    """List batches with optional search and filters.
+    """List batches with optional search, filters, and pagination.
 
     Query params:
       - search: string (matches batch_number, line, supplier)
       - product_id: integer
-      - status: string (e.g. 'under_inspection', 'on_hold', 'released', etc.)
+      - status: string
+      - page: integer (default 1)
+      - per_page: integer (default 20, max 100)
     """
     search = request.args.get("search", "").strip()
     product_id = request.args.get("product_id", type=int)
     status = request.args.get("status", "").strip().lower()
+    page = max(1, request.args.get("page", 1, type=int))
+    per_page = min(100, max(1, request.args.get("per_page", 20, type=int)))
 
     query = Batch.query
 
@@ -48,10 +53,19 @@ def list_batches(current_user):
             )
         )
 
-    batches = query.order_by(Batch.created_at.desc()).all()
+    total = query.count()
+    batches = (
+        query.order_by(Batch.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
     return jsonify({
         "batches": [b.to_dict(include_product=True) for b in batches],
-        "count": len(batches),
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": max(1, (total + per_page - 1) // per_page),
     }), 200
 
 
@@ -269,8 +283,14 @@ def update_batch_status(batch_id, current_user):
     if new_status not in VALID_STATUSES:
         raise ValidationError(f"Invalid status. Must be one of: {', '.join(sorted(VALID_STATUSES))}")
 
-    # Note: on_hold and released batch decisions are managed via Phase 6 batch_decision workflow,
-    # but operational updates like under_inspection, in_production, produced, archived are handled here.
+    # Note: on_hold and released are exclusively managed via the batch_decision workflow.
+    # Supervisors cannot directly set these statuses.
+    SUPERVISOR_BLOCKED_STATUSES = {BatchStatus.ON_HOLD.value, BatchStatus.RELEASED.value}
+    if current_user.role == UserRole.SUPERVISOR.value and new_status in SUPERVISOR_BLOCKED_STATUSES:
+        raise ForbiddenError(
+            f"Status '{new_status}' can only be set by a Quality Manager via the batch decision workflow"
+        )
+
     old_status = batch.status
     batch.status = new_status
 

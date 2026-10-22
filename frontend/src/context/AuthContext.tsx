@@ -6,8 +6,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  switchRole: (role: UserRole) => Promise<void>;
   hasRole: (roles: UserRole | UserRole[]) => boolean;
 }
 
@@ -21,30 +20,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('access_token'));
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    const verifyUser = async () => {
-      const storedToken = localStorage.getItem('access_token');
-      if (storedToken) {
-        try {
-          const res = await authApi.getMe();
-          setUser(res.user);
-          localStorage.setItem('user', JSON.stringify(res.user));
-        } catch {
-          setUser(null);
-          setToken(null);
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          localStorage.removeItem('user');
-        }
-      }
-      setIsLoading(false);
-    };
-
-    verifyUser();
-  }, []);
-
-  const login = async (email: string, password: string) => {
-    const res = await authApi.login(email, password);
+  const applyAuth = (res: { user: User; access_token: string; refresh_token: string }) => {
     setToken(res.access_token);
     setUser(res.user);
     localStorage.setItem('access_token', res.access_token);
@@ -52,12 +28,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('user', JSON.stringify(res.user));
   };
 
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
+  useEffect(() => {
+    const init = async () => {
+      const storedToken = localStorage.getItem('access_token');
+      if (storedToken) {
+        try {
+          const res = await authApi.getMe();
+          setUser(res.user);
+          localStorage.setItem('user', JSON.stringify(res.user));
+        } catch {
+          // Token invalid — auto-login as default inspector
+          try {
+            const res = await authApi.switchRole('inspector');
+            applyAuth(res);
+          } catch {
+            setUser(null);
+            setToken(null);
+          }
+        }
+      } else {
+        // No token — auto-login as inspector
+        try {
+          const res = await authApi.switchRole('inspector');
+          applyAuth(res);
+        } catch {
+          setUser(null);
+          setToken(null);
+        }
+      }
+      setIsLoading(false);
+    };
+    init();
+  }, []);
+
+  const switchRole = async (role: UserRole) => {
+    const res = await authApi.switchRole(role);
+    applyAuth(res);
   };
 
   const hasRole = (roles: UserRole | UserRole[]): boolean => {
@@ -67,7 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, token, isLoading, switchRole, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
@@ -75,8 +81,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };

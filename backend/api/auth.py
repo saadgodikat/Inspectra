@@ -116,3 +116,34 @@ def me():
     if user is None:
         raise APIError("User not found", 404)
     return jsonify({"user": user.to_dict()}), 200
+
+
+ROLE_CREDENTIALS = {
+    "inspector": ("alice@example.com", "inspector123"),
+    "supervisor": ("bob@example.com", "supervisor123"),
+    "quality_manager": ("carol@example.com", "qualitymgr123"),
+}
+
+
+@auth_bp.route("/switch-role", methods=["POST"])
+def switch_role():
+    """Switch to a different demo role by logging in as the seed account."""
+    data = request.get_json(silent=True) or {}
+    role = (data.get("role") or "").strip().lower()
+
+    if role not in ROLE_CREDENTIALS:
+        raise ValidationError(f"Role must be one of: {', '.join(ROLE_CREDENTIALS)}")
+
+    email, password = ROLE_CREDENTIALS[role]
+    user = User.query.filter_by(email=email).first()
+    if user is None or not user.check_password(password):
+        raise APIError("Seed account not found — run flask seed-users", 404)
+
+    access_token = create_access_token(identity=str(user.id))
+    refresh_token = create_refresh_token(identity=str(user.id))
+
+    return jsonify({
+        "user": user.to_dict(),
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+    }), 200

@@ -22,7 +22,7 @@ An end-to-end manufacturing decision-support platform with a high-density dark-m
 | Route | Screen | Description |
 |-------|--------|-------------|
 | `/` | **Command Center** | Real-time KPI dashboard with FPY gauge, station activity, batch pipeline, and recent inspections |
-| `/inspections` | **Inspections & Runs Console** | Station telemetry, live runs table, image upload, diagnostic sidecar with reticle overlays |
+| `/inspections` | **Inspections & Runs Console** | Item-counted inspection runs, numbered bulk image upload, mock ML analysis, and per-item review |
 | `/reviews` | **Defect Tracker & CAPA** | Defect registry, severity ribbon, microscopy viewer, interactive CAPA action plan checklist |
 | `/batch-decisions` | **Batch Releases & Quality Gates** | 21 CFR Part 11 lot release, AQL defect density, AOI camera verification, e-signature sign-off |
 | `/analytics` | **Quality Analytics & SPC Yield** | X-bar R chart with UCL/LCL, Western Electric run rules, Pareto failure modes, multi-line yield trends |
@@ -30,6 +30,12 @@ An end-to-end manufacturing decision-support platform with a high-density dark-m
 | `/audit` | **Audit Event Log** | 21 CFR Part 11 immutable event log with SHA-256 digital stamp verification |
 | `/users` | **User & Role Management** | Account status, role assignment, permission controls |
 | `/login` | **Terminal Login** | Industrial-themed login with one-click demo access |
+
+### Item-level inspection workflow
+
+When creating an inspection, choose a product and batch, then set the number of items to inspect (prefilled from the batch quantity when available; the selected quantity cannot exceed that quantity). Upload one image per item using a filename that contains its item number, such as `059.jpg` or `casting_059.png`. The page reports unmatched names, lets you run analysis on uploaded images, and displays each item's image and result. Supervisors and quality managers can override analyzed results with a decision and optional comment.
+
+The current `backend/services/ml_service.py` implementation is a random mock, not a production defect classifier. Do not use its results to make actual quality or release decisions until the ML implementation has been replaced and validated.
 
 ---
 

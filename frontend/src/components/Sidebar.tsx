@@ -7,7 +7,6 @@ interface NavItem {
   name: string;
   to: string;
   iconName: string;
-  badge?: string;
   allowedRoles?: string[];
 }
 
@@ -21,26 +20,22 @@ const navItems: NavItem[] = [
     name: 'Inspections & Runs',
     to: '/inspections',
     iconName: 'fact_check',
-    badge: 'LIVE',
   },
   {
     name: 'Defect Tracker & CAPA',
     to: '/reviews',
     iconName: 'bug_report',
-    badge: 'ACTIVE',
   },
   {
     name: 'Batch Releases & Gates',
     to: '/batch-decisions',
     iconName: 'verified',
-    badge: 'CFR-11',
     allowedRoles: ['quality_manager', 'supervisor'],
   },
   {
     name: 'Analytics & SPC Yield',
     to: '/analytics',
     iconName: 'query_stats',
-    badge: 'SPC',
   },
   {
     name: 'Products & Lots',
@@ -114,17 +109,6 @@ export const Sidebar: React.FC = () => {
                       <span>{item.name}</span>
                     </div>
 
-                    {item.badge && (
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold tracking-wider ${
-                          isActive
-                            ? 'bg-primary text-on-primary'
-                            : 'bg-surface-container text-tertiary border border-outline-variant/30'
-                        }`}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
                   </>
                 )}
               </NavLink>

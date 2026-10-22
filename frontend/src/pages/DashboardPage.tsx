@@ -4,8 +4,7 @@ import { authApi, inspectionsApi, productsApi, batchesApi } from '../api/client'
 import type { HealthStatus, Inspection, Product, Batch } from '../types';
 import { useNavigate } from 'react-router-dom';
 
-/* ── Simulated telemetry seed data ── */
-const STATIONS = ['STN-01', 'STN-02', 'STN-03', 'STN-04'];
+/* ── Shift helper ── */
 const SHIFT_LABELS: Record<number, string> = { 0: 'NIGHT', 1: 'DAY', 2: 'SWING' };
 
 const getShift = () => {
@@ -182,7 +181,7 @@ export const DashboardPage: React.FC = () => {
         <div className="xl:col-span-2 space-y-6">
 
           {/* System Health Strip */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-label-sm text-outline font-mono uppercase tracking-wider">API Server</span>
@@ -194,7 +193,7 @@ export const DashboardPage: React.FC = () => {
                   {health?.status === 'healthy' ? 'Operational' : 'Connecting…'}
                 </span>
               </div>
-              <p className="text-label-sm text-outline mt-1 font-mono">Flask REST • :5000</p>
+              <p className="text-label-sm text-outline mt-1 font-mono">REST API</p>
             </div>
 
             <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
@@ -208,19 +207,7 @@ export const DashboardPage: React.FC = () => {
                   {health?.database === 'connected' ? 'Connected' : 'Syncing'}
                 </span>
               </div>
-              <p className="text-label-sm text-outline mt-1 font-mono">SQLAlchemy + Alembic</p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Auth</span>
-                <span className="material-symbols-outlined text-[18px] text-cyan-400">shield</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[14px] text-cyan-400">lock</span>
-                <span className="text-body-md font-semibold text-on-surface">JWT Active</span>
-              </div>
-              <p className="text-label-sm text-outline mt-1 font-mono">RBAC • Bcrypt</p>
+              <p className="text-label-sm text-outline mt-1 font-mono">ORM + Migrations</p>
             </div>
 
             <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
@@ -341,33 +328,25 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Station Activity */}
+          {/* Inspection Status Summary */}
           <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Station Activity</span>
-              <span className="px-2 py-0.5 rounded bg-tertiary/10 border border-tertiary/25 text-tertiary text-label-sm font-mono">
-                LIVE
-              </span>
+              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Inspection Pipeline</span>
             </div>
             <div className="space-y-2.5">
-              {STATIONS.map((stn, i) => {
-                const status = i < 3 ? 'ACTIVE' : 'IDLE';
-                const utilization = i < 3 ? 72 + i * 8 : 0;
+              {[
+                { label: 'Pending Upload',   key: 'pending_upload',   color: 'bg-slate-400' },
+                { label: 'Processing',       key: 'processing',       color: 'bg-amber-400' },
+                { label: 'Pending Review',   key: 'pending_review',   color: 'bg-cyan-400' },
+                { label: 'Reviewed',         key: 'reviewed',         color: 'bg-emerald-400' },
+                { label: 'Failed',           key: 'processing_failed',color: 'bg-rose-400' },
+              ].map(({ label, key, color }) => {
+                const count = inspections.filter((i) => i.status === key).length;
                 return (
-                  <div key={stn} className="flex items-center gap-3">
-                    <span className={`w-2 h-2 rounded-full ${status === 'ACTIVE' ? 'bg-emerald-400 animate-pulse' : 'bg-outline/40'}`} />
-                    <span className="text-body-sm font-mono text-on-surface flex-1">{stn}</span>
-                    <span className={`text-label-sm font-mono ${status === 'ACTIVE' ? 'text-emerald-400' : 'text-outline'}`}>
-                      {status}
-                    </span>
-                    {status === 'ACTIVE' && (
-                      <div className="w-16 h-1.5 rounded-full bg-surface-container-high overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-emerald-500/70"
-                          style={{ width: `${utilization}%` }}
-                        />
-                      </div>
-                    )}
+                  <div key={key} className="flex items-center gap-3">
+                    <span className={`w-2 h-2 rounded-full ${color}`} />
+                    <span className="text-body-sm font-mono text-on-surface flex-1">{label}</span>
+                    <span className="text-label-sm font-mono text-on-surface-variant">{count}</span>
                   </div>
                 );
               })}

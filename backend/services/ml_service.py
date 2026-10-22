@@ -49,6 +49,27 @@ def _sanitize_error_message(raw_msg: Optional[str]) -> str:
     return raw_msg.strip()
 
 
+def run_efficientnet(image_path: str) -> Dict[str, Any]:
+    """Run the trained model using the legacy item-analysis result shape."""
+    if predict_image is None:
+        raise RuntimeError("ML inference runtime is not available.")
+
+    prediction = predict_image(image_path)
+    if prediction.get("status") != MLResultStatus.SUCCESS.value:
+        raise RuntimeError(
+            _sanitize_error_message(prediction.get("error_details"))
+        )
+
+    duration = prediction.get("processing_duration_ms")
+    return {
+        "predicted_class": prediction["predicted_class"],
+        "scores": prediction["scores"],
+        "model_name": prediction["model_name"],
+        "model_version": prediction["model_version"],
+        "duration_ms": int(round(duration)) if duration is not None else None,
+    }
+
+
 def process_inspection_image_ml(
     image_record: InspectionImage,
     checkpoint_path: Optional[str] = None,

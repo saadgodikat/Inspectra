@@ -126,3 +126,73 @@ export interface Inspection {
   created_at: string;
   updated_at: string;
 }
+
+export type ItemStatus = 'pending_upload' | 'uploaded' | 'analyzed';
+export type OverrideDecision = 'good' | 'defective';
+
+export interface MLResultSummary {
+  id: number;
+  predicted_class: string;
+  model_name: string;
+  model_version: string;
+  raw_scores: Record<string, number>;
+  processing_duration_ms: number;
+  status: string;
+  created_at: string;
+}
+
+export interface InspectionItem {
+  id: number;
+  inspection_id: number;
+  item_number: number;
+  status: ItemStatus;
+  image_id: number | null;
+  ml_result_id: number | null;
+  override_decision: OverrideDecision | null;
+  override_comment: string | null;
+  override_by_id: number | null;
+  effective_decision: string | null;
+  ml_result?: MLResultSummary;
+  image?: {
+    id: number;
+    original_filename: string;
+    content_type: string;
+    file_size: number;
+    upload_timestamp: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ItemsSummary {
+  total: number;
+  uploaded: number;
+  analyzed: number;
+  pending_upload: number;
+  good: number;
+  defective: number;
+}
+
+export interface ItemsResponse {
+  inspection_id: number;
+  summary: ItemsSummary;
+  items: InspectionItem[];
+}
+
+export interface BulkUploadResult {
+  message: string;
+  succeeded: Array<{ item_number: number; image_id: number; filename: string }>;
+  errors: Array<{ filename: string; error: string }>;
+  total_uploaded: number;
+  total_errors: number;
+}
+
+export interface AnalysisResult {
+  message: string;
+  analyzed: number;
+  good: number;
+  defective: number;
+  failed: number;
+  pending_upload: number;
+  total: number;
+}

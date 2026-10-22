@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './layouts/AppLayout';
-import { LoginPage } from './pages/LoginPage';
 
 /* ── Lazy-loaded page chunks ── */
 const InspectionsPage = React.lazy(() =>
@@ -50,8 +49,6 @@ export const App: React.FC = () => {
       <BrowserRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
-
             <Route
               path="/"
               element={

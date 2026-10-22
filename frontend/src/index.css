@@ -6,7 +6,7 @@
     --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'IBM Plex Mono', monospace;
 
-    /* Inspectra Theme Tokens */
+    /* ── Dark mode (default) ── */
     --color-background: #131313;
     --color-surface: #131313;
     --color-surface-dim: #131313;
@@ -17,7 +17,7 @@
     --color-surface-container-high: #2a2a2a;
     --color-surface-container-highest: #353534;
     --color-surface-variant: #353534;
-    
+
     --color-on-surface: #e5e2e1;
     --color-on-surface-variant: #dbc2b0;
     --color-on-background: #e5e2e1;
@@ -43,6 +43,46 @@
     --color-on-error: #690005;
     --color-error-container: #93000a;
     --color-on-error-container: #ffdad6;
+  }
+
+  /* ── Light mode ── */
+  [data-theme="light"] {
+    --color-background: #faf7f5;
+    --color-surface: #faf7f5;
+    --color-surface-dim: #ede8e4;
+    --color-surface-bright: #ffffff;
+    --color-surface-container-lowest: #ffffff;
+    --color-surface-container-low: #f5f0ec;
+    --color-surface-container: #ede8e4;
+    --color-surface-container-high: #e4ddd8;
+    --color-surface-container-highest: #d9d1cb;
+    --color-surface-variant: #d9d1cb;
+
+    --color-on-surface: #1e1a17;
+    --color-on-surface-variant: #4e3a2c;
+    --color-on-background: #1e1a17;
+    --color-outline: #7a5c48;
+    --color-outline-variant: #c9b8ae;
+
+    --color-primary: #b45309;
+    --color-on-primary: #ffffff;
+    --color-primary-container: #fde68a;
+    --color-on-primary-container: #431c00;
+
+    --color-secondary: #92400e;
+    --color-on-secondary: #ffffff;
+    --color-secondary-container: #fcd34d;
+    --color-on-secondary-container: #3b1a00;
+
+    --color-tertiary: #0369a1;
+    --color-on-tertiary: #ffffff;
+    --color-tertiary-container: #bae6fd;
+    --color-on-tertiary-container: #002c48;
+
+    --color-error: #b91c1c;
+    --color-on-error: #ffffff;
+    --color-error-container: #fee2e2;
+    --color-on-error-container: #450a0a;
   }
 
   body {
@@ -144,50 +184,51 @@
 }
 
 /* Inspectra Palette Classes */
-.bg-background { background-color: #131313; }
-.bg-surface { background-color: #131313; }
-.bg-surface-dim { background-color: #131313; }
-.bg-surface-bright { background-color: #3a3939; }
-.bg-surface-container-lowest { background-color: #0e0e0e; }
-.bg-surface-container-low { background-color: #1c1b1b; }
-.bg-surface-container { background-color: #201f1f; }
-.bg-surface-container-high { background-color: #2a2a2a; }
-.bg-surface-container-highest { background-color: #353534; }
-.bg-surface-variant { background-color: #353534; }
+/* Inspectra Palette Classes — driven by CSS variables */
+.bg-background { background-color: var(--color-background); }
+.bg-surface { background-color: var(--color-surface); }
+.bg-surface-dim { background-color: var(--color-surface-dim); }
+.bg-surface-bright { background-color: var(--color-surface-bright); }
+.bg-surface-container-lowest { background-color: var(--color-surface-container-lowest); }
+.bg-surface-container-low { background-color: var(--color-surface-container-low); }
+.bg-surface-container { background-color: var(--color-surface-container); }
+.bg-surface-container-high { background-color: var(--color-surface-container-high); }
+.bg-surface-container-highest { background-color: var(--color-surface-container-highest); }
+.bg-surface-variant { background-color: var(--color-surface-variant); }
 
-.bg-primary { background-color: #ffb77d; }
-.bg-primary-container { background-color: #d97707; }
-.bg-secondary { background-color: #ffb95f; }
-.bg-secondary-container { background-color: #ee9800; }
-.bg-tertiary { background-color: #96ccff; }
-.bg-tertiary-container { background-color: #0297e8; }
-.bg-error { background-color: #ffb4ab; }
-.bg-error-container { background-color: #93000a; }
+.bg-primary { background-color: var(--color-primary); }
+.bg-primary-container { background-color: var(--color-primary-container); }
+.bg-secondary { background-color: var(--color-secondary); }
+.bg-secondary-container { background-color: var(--color-secondary-container); }
+.bg-tertiary { background-color: var(--color-tertiary); }
+.bg-tertiary-container { background-color: var(--color-tertiary-container); }
+.bg-error { background-color: var(--color-error); }
+.bg-error-container { background-color: var(--color-error-container); }
 
-.text-on-surface { color: #e5e2e1; }
-.text-on-surface-variant { color: #dbc2b0; }
-.text-outline { color: #a38c7c; }
-.text-outline-variant { color: #554336; }
-.text-primary { color: #ffb77d; }
-.text-on-primary { color: #4d2600; }
-.text-on-primary-container { color: #432100; }
-.text-secondary { color: #ffb95f; }
-.text-on-secondary { color: #472a00; }
-.text-on-secondary-container { color: #5b3800; }
-.text-tertiary { color: #96ccff; }
-.text-on-tertiary { color: #003353; }
-.text-on-tertiary-container { color: #002c48; }
-.text-error { color: #ffb4ab; }
-.text-on-error { color: #690005; }
-.text-on-error-container { color: #ffdad6; }
+.text-on-surface { color: var(--color-on-surface); }
+.text-on-surface-variant { color: var(--color-on-surface-variant); }
+.text-outline { color: var(--color-outline); }
+.text-outline-variant { color: var(--color-outline-variant); }
+.text-primary { color: var(--color-primary); }
+.text-on-primary { color: var(--color-on-primary); }
+.text-on-primary-container { color: var(--color-on-primary-container); }
+.text-secondary { color: var(--color-secondary); }
+.text-on-secondary { color: var(--color-on-secondary); }
+.text-on-secondary-container { color: var(--color-on-secondary-container); }
+.text-tertiary { color: var(--color-tertiary); }
+.text-on-tertiary { color: var(--color-on-tertiary); }
+.text-on-tertiary-container { color: var(--color-on-tertiary-container); }
+.text-error { color: var(--color-error); }
+.text-on-error { color: var(--color-on-error); }
+.text-on-error-container { color: var(--color-on-error-container); }
 
-.border-surface-container-high { border-color: #2a2a2a; }
-.border-surface-container-highest { border-color: #353534; }
-.border-surface-container { border-color: #201f1f; }
-.border-outline-variant { border-color: #554336; }
-.border-outline { border-color: #a38c7c; }
-.border-primary { border-color: #ffb77d; }
-.border-primary-container { border-color: #d97707; }
+.border-surface-container-high { border-color: var(--color-surface-container-high); }
+.border-surface-container-highest { border-color: var(--color-surface-container-highest); }
+.border-surface-container { border-color: var(--color-surface-container); }
+.border-outline-variant { border-color: var(--color-outline-variant); }
+.border-outline { border-color: var(--color-outline); }
+.border-primary { border-color: var(--color-primary); }
+.border-primary-container { border-color: var(--color-primary-container); }
 
 /* Custom Spacing & Padding Tokens */
 .px-margin { padding-left: 1.5rem; padding-right: 1.5rem; }
@@ -222,12 +263,12 @@
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #0e0e0e;
+  background: var(--color-surface-container-lowest);
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
+  background: var(--color-surface-container-high);
   border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #d97707;
+  background: var(--color-primary-container);
 }
