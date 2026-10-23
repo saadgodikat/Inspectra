@@ -1,8 +1,9 @@
 """Inspections API endpoints — intake, image uploads, secure evidence delivery, and listing."""
 
 from datetime import datetime, timezone, date
+from secrets import token_hex
 from flask import Blueprint, jsonify, request, send_file, current_app
-from sqlalchemy import or_
+from sqlalchemy import case, func, or_
 
 from backend.extensions import db
 from backend.models.inspection import Inspection, InspectionStatus, SampleType
@@ -57,6 +58,7 @@ def list_inspections(current_user):
     search = request.args.get("search", "").strip()
     date_from = request.args.get("date_from", "").strip()
     date_to = request.args.get("date_to", "").strip()
+    reinspection_of_id = request.args.get("reinspection_of_id", type=int)
 
     page = max(1, request.args.get("page", 1, type=int))
     per_page = min(100, max(1, request.args.get("per_page", 20, type=int)))
@@ -71,6 +73,9 @@ def list_inspections(current_user):
 
     if inspector_id:
         query = query.filter_by(inspector_id=inspector_id)
+
+    if reinspection_of_id:
+        query = query.filter_by(reinspection_of_id=reinspection_of_id)
 
     if status and status != "all":
         query = query.filter_by(status=status)
@@ -106,8 +111,76 @@ def list_inspections(current_user):
 
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
+    inspection_data = [i.to_dict(include_details=True) for i in paginated]
+    inspection_ids = [inspection.id for inspection in paginated]
+    item_summaries = {}
+    if inspection_ids:
+        item_summary_rows = (
+            db.session.query(
+                InspectionItem.inspection_id,
+                func.count(InspectionItem.id).label("total"),
+                func.sum(
+                    case(
+                        (InspectionItem.status == ItemStatus.ANALYZED, 1),
+                        else_=0,
+                    )
+                ).label("analyzed"),
+                func.sum(
+                    case(
+                        (
+                            (InspectionItem.status == ItemStatus.ANALYZED)
+                            & (
+                                func.coalesce(
+                                    InspectionItem.override_decision,
+                                    MLResult.predicted_class,
+                                )
+                                == "good"
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("good"),
+                func.sum(
+                    case(
+                        (
+                            (InspectionItem.status == ItemStatus.ANALYZED)
+                            & (
+                                func.coalesce(
+                                    InspectionItem.override_decision,
+                                    MLResult.predicted_class,
+                                )
+                                == "defective"
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("defective"),
+            )
+            .outerjoin(MLResult, InspectionItem.ml_result_id == MLResult.id)
+            .filter(InspectionItem.inspection_id.in_(inspection_ids))
+            .group_by(InspectionItem.inspection_id)
+            .all()
+        )
+        item_summaries = {
+            row.inspection_id: {
+                "total": row.total,
+                "analyzed": row.analyzed,
+                "good": row.good,
+                "defective": row.defective,
+            }
+            for row in item_summary_rows
+        }
+
+    for inspection, data in zip(paginated, inspection_data):
+        data["item_summary"] = item_summaries.get(
+            inspection.id,
+            {"total": 0, "analyzed": 0, "good": 0, "defective": 0},
+        )
+
     return jsonify({
-        "inspections": [i.to_dict(include_details=True) for i in paginated],
+        "inspections": inspection_data,
         "total": total,
         "page": page,
         "per_page": per_page,
@@ -143,9 +216,21 @@ def create_inspection(current_user):
     sample_type = (data.get("sample_type") or SampleType.ITEM.value).strip().lower()
     observations = (data.get("observations") or "").strip() or None
     requested_quantity = data.get("quantity")
+    reinspection_of_id = data.get("reinspection_of_id")
 
     errors: dict[str, str] = {}
     batch = None
+    parent_inspection = None
+
+    if reinspection_of_id:
+        parent_inspection = db.session.get(Inspection, reinspection_of_id)
+        if not parent_inspection:
+            errors["reinspection_of_id"] = f"Parent inspection with ID {reinspection_of_id} does not exist"
+        else:
+            if not product_id:
+                product_id = parent_inspection.product_id
+            if not batch_id:
+                batch_id = parent_inspection.batch_id
 
     if not product_id:
         errors["product_id"] = "Product ID is required"
@@ -188,15 +273,20 @@ def create_inspection(current_user):
     if errors:
         raise ValidationError("Validation failed", details=errors)
 
+    ref = sample_reference
+    if not ref and parent_inspection:
+        ref = f"Reinspection of INS-{parent_inspection.id:04d}"
+
     inspection = Inspection(
         product_id=product_id,
         batch_id=batch_id,
         inspector_id=current_user.id,
-        sample_reference=sample_reference,
+        sample_reference=ref,
         sample_type=sample_type,
         observations=observations,
         status=InspectionStatus.PENDING_UPLOAD.value,
         inspection_timestamp=datetime.now(timezone.utc),
+        reinspection_of_id=parent_inspection.id if parent_inspection else None,
     )
     db.session.add(inspection)
     db.session.flush()
@@ -222,12 +312,144 @@ def create_inspection(current_user):
             "sample_reference": inspection.sample_reference,
             "sample_type": inspection.sample_type,
             "items_allocated": quantity,
+            "reinspection_of_id": inspection.reinspection_of_id,
         },
     )
     db.session.commit()
 
     return jsonify({
         "message": "Inspection created successfully",
+        "inspection": inspection.to_dict(include_details=True),
+    }), 201
+
+
+@inspections_bp.route("/with-batch", methods=["POST"])
+@require_permission("inspection.create")
+def create_inspection_with_batch(current_user):
+    """Atomically create a production batch and its initial inspection."""
+    data = request.get_json(silent=True)
+    if not data:
+        raise ValidationError("JSON body required")
+
+    errors: dict[str, str] = {}
+    product_id = data.get("product_id")
+    if isinstance(product_id, bool) or not isinstance(product_id, int) or product_id < 1:
+        errors["product_id"] = "Product ID is required"
+        product = None
+    else:
+        product = db.session.get(Product, product_id)
+        if not product:
+            errors["product_id"] = f"Product with ID {product_id} does not exist"
+        elif not product.is_active:
+            errors["product_id"] = "Cannot create a batch for an archived product"
+
+    quantity = data.get("quantity")
+    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 1:
+        errors["quantity"] = "Quantity must be a whole number of at least 1"
+
+    production_date_raw = data.get("production_date")
+    parsed_date = None
+    if production_date_raw:
+        if not isinstance(production_date_raw, str):
+            errors["production_date"] = "Production date must be in YYYY-MM-DD format"
+        else:
+            try:
+                parsed_date = date.fromisoformat(production_date_raw)
+            except ValueError:
+                errors["production_date"] = "Production date must be in YYYY-MM-DD format"
+
+    def optional_text(field: str) -> str | None:
+        value = data.get(field)
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            errors[field] = f"{field.replace('_', ' ').capitalize()} must be text"
+            return None
+        return value.strip() or None
+
+    production_line = optional_text("production_line")
+    supplier = optional_text("supplier")
+    sample_reference = optional_text("sample_reference")
+    observations = optional_text("observations")
+
+    sample_type_raw = data.get("sample_type", SampleType.ITEM.value)
+    sample_type = (
+        sample_type_raw.strip().lower()
+        if isinstance(sample_type_raw, str)
+        else ""
+    )
+    if sample_type not in VALID_SAMPLE_TYPES:
+        errors["sample_type"] = (
+            f"Sample type must be one of: {', '.join(sorted(VALID_SAMPLE_TYPES))}"
+        )
+
+    if errors:
+        raise ValidationError("Validation failed", details=errors)
+
+    batch = Batch(
+        batch_number=f"BAT-{date.today():%Y%m%d}-{token_hex(4).upper()}",
+        product_id=product.id,
+        production_date=parsed_date,
+        quantity=quantity,
+        status=BatchStatus.UNDER_INSPECTION.value,
+        production_line=production_line,
+        supplier=supplier,
+    )
+    db.session.add(batch)
+    db.session.flush()
+
+    inspection = Inspection(
+        product_id=product.id,
+        batch_id=batch.id,
+        inspector_id=current_user.id,
+        sample_reference=sample_reference,
+        sample_type=sample_type,
+        observations=observations,
+        status=InspectionStatus.PENDING_UPLOAD.value,
+        inspection_timestamp=datetime.now(timezone.utc),
+    )
+    db.session.add(inspection)
+    db.session.flush()
+
+    for item_number in range(1, quantity + 1):
+        db.session.add(InspectionItem(
+            inspection_id=inspection.id,
+            item_number=item_number,
+            status=ItemStatus.PENDING_UPLOAD,
+        ))
+
+    log_audit_event(
+        actor_id=current_user.id,
+        action="batch.create",
+        entity_type="batch",
+        entity_id=batch.id,
+        details={
+            "batch_number": batch.batch_number,
+            "product_id": batch.product_id,
+            "status": batch.status,
+            "quantity": batch.quantity,
+            "created_with_inspection_id": inspection.id,
+        },
+    )
+    log_audit_event(
+        actor_id=current_user.id,
+        action="inspection.create",
+        entity_type="inspection",
+        entity_id=inspection.id,
+        details={
+            "product_id": inspection.product_id,
+            "batch_id": inspection.batch_id,
+            "sample_reference": inspection.sample_reference,
+            "sample_type": inspection.sample_type,
+            "items_allocated": quantity,
+            "created_batch": True,
+        },
+    )
+    db.session.commit()
+
+    return jsonify({
+        "message": "Batch and inspection created successfully",
+        "batch": batch.to_dict(include_product=True),
         "inspection": inspection.to_dict(include_details=True),
     }), 201
 
@@ -467,4 +689,3 @@ def get_multiclass_results(inspection_id, current_user):
         "multiclass_results": results,
         "count": len(results),
     }), 200
-

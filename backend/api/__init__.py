@@ -13,6 +13,7 @@ from backend.api.batch_decisions import batch_decisions_bp
 from backend.api.audit import audit_bp
 from backend.api.dashboard import dashboard_bp
 from backend.api.inspection_items import items_bp
+from backend.api.chatbot import chatbot_bp
 
 
 def register_blueprints(app):
@@ -30,3 +31,4 @@ def register_blueprints(app):
     app.register_blueprint(audit_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(items_bp)
+    app.register_blueprint(chatbot_bp)

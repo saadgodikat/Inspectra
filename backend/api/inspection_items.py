@@ -9,6 +9,7 @@ from backend.models.inspection import Inspection, InspectionStatus
 from backend.models.inspection_item import InspectionItem, ItemStatus
 from backend.models.ml_result import MLResult, MLResultStatus
 from backend.models.inspection_image import InspectionImage, ImageProcessingState
+from backend.models.defect import Defect, DefectStatus
 from backend.middleware.permissions import require_permission
 from backend.middleware.errors import NotFoundError, ValidationError
 from backend.services.audit_service import log_audit_event
@@ -18,6 +19,57 @@ from backend.services.ml_service import run_efficientnet
 items_bp = Blueprint("inspection_items", __name__, url_prefix="/api/inspections")
 
 VALID_OVERRIDE_DECISIONS = {"good", "defective"}
+
+
+def sync_defects_for_inspection(inspection_id: int, user_id=None):
+    """Ensure all items with effective_decision == 'defective' have a corresponding Defect record in the registry."""
+    inspection = db.session.get(Inspection, inspection_id)
+    if not inspection:
+        return
+
+    items = InspectionItem.query.filter_by(inspection_id=inspection_id).all()
+    existing_defects = Defect.query.filter_by(inspection_id=inspection_id).all()
+    creator_id = user_id or inspection.inspector_id
+
+    for item in items:
+        decision = item.effective_decision()
+        tag = f"Item #{item.item_number:03d}"
+
+        matching_defect = next(
+            (d for d in existing_defects if tag in (d.description or "")), None
+        )
+
+        if decision == "defective":
+            raw_scores = item.ml_result.raw_scores if item.ml_result else None
+            conf = 0.85
+            if raw_scores and isinstance(raw_scores, dict):
+                conf = float(raw_scores.get("defective", 0.85))
+
+            severity = "critical" if conf > 0.9 else "major" if conf > 0.6 else "minor"
+
+            if not matching_defect:
+                new_defect = Defect(
+                    inspection_id=inspection_id,
+                    review_id=None,
+                    defect_category="casting_defect",
+                    description=f"Item #{item.item_number:03d} flagged defective by {item.ml_result.model_name if item.ml_result else 'EfficientNet-B0'} (confidence: {conf*100:.1f}%).",
+                    severity=severity,
+                    status=DefectStatus.OPEN.value,
+                    created_by_id=creator_id,
+                )
+                db.session.add(new_defect)
+            else:
+                if (
+                    matching_defect.status == DefectStatus.RESOLVED.value
+                    and item.override_decision == "defective"
+                ):
+                    matching_defect.status = DefectStatus.OPEN.value
+        elif decision == "good" and matching_defect:
+            if matching_defect.status == DefectStatus.OPEN.value:
+                matching_defect.status = DefectStatus.RESOLVED.value
+                matching_defect.description = (
+                    matching_defect.description or ""
+                ) + " [Resolved: overridden to good]"
 
 
 def _extract_item_number(filename: str):
@@ -260,6 +312,7 @@ def run_analysis(inspection_id, current_user):
         inspection.status = InspectionStatus.PENDING_REVIEW.value
 
     if items_to_analyze:
+        sync_defects_for_inspection(inspection_id, user_id=current_user.id)
         log_audit_event(
             actor_id=current_user.id,
             action="inspection.run_analysis",
@@ -337,6 +390,7 @@ def override_item(inspection_id, item_number, current_user):
             "ml_decision": item.ml_result.predicted_class if item.ml_result else None,
         },
     )
+    sync_defects_for_inspection(inspection_id, user_id=current_user.id)
     db.session.commit()
 
     return jsonify({

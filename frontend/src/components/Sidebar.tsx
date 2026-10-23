@@ -38,6 +38,11 @@ const navItems: NavItem[] = [
     iconName: 'query_stats',
   },
   {
+    name: 'Ask Inspectra',
+    to: '/chatbot',
+    iconName: 'forum',
+  },
+  {
     name: 'Products & Lots',
     to: '/products',
     iconName: 'inventory_2',

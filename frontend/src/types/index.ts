@@ -100,6 +100,14 @@ export interface Inspection {
   inspection_timestamp: string;
   reinspection_of_id?: number | null;
   image_count: number;
+  item_count?: number;
+  item_summary?: {
+    total: number;
+    analyzed: number;
+    good: number;
+    defective: number;
+  };
+  confirmed_defects_count?: number;
   product?: {
     id: number;
     product_code: string;
@@ -123,6 +131,21 @@ export interface Inspection {
     role: string;
   };
   images?: InspectionImage[];
+  reviews?: HumanReview[];
+  defects?: Defect[];
+  reinspection_of?: {
+    id: number;
+    sample_reference?: string | null;
+    status: string;
+    created_at?: string;
+  } | null;
+  reinspections?: Array<{
+    id: number;
+    sample_reference?: string | null;
+    status: string;
+    created_at?: string;
+    inspector_name?: string | null;
+  }>;
   created_at: string;
   updated_at: string;
 }
@@ -195,4 +218,145 @@ export interface AnalysisResult {
   failed: number;
   pending_upload: number;
   total: number;
+}
+
+export type ReviewDecision = 'confirm' | 'correct' | 'no_defect' | 'needs_more_evidence';
+
+export interface HumanReview {
+  id: number;
+  inspection_id: number;
+  ml_result_id?: number | null;
+  reviewer_id: number;
+  decision: ReviewDecision;
+  confirmed_class?: string | null;
+  comments?: string | null;
+  review_timestamp: string;
+  reviewer?: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+  };
+}
+
+export type DefectSeverity = 'critical' | 'major' | 'minor' | 'cosmetic' | 'high' | 'medium' | 'low';
+export type DefectStatus = 'open' | 'in_progress' | 'resolved' | 'closed' | 'reopened';
+
+export interface Defect {
+  id: number;
+  defect_code?: string;
+  item_number?: number | null;
+  item_tag?: string | null;
+  inspection_id: number;
+  review_id?: number | null;
+  defect_category: string;
+  defect_type: string;
+  description?: string | null;
+  severity: DefectSeverity;
+  status: DefectStatus;
+  created_by_id: number;
+  created_by?: {
+    id: number;
+    name: string;
+    role: string;
+  };
+  review?: HumanReview;
+  corrective_actions?: CorrectiveAction[];
+  confidence_score?: number | null;
+  location_x?: number | null;
+  location_y?: number | null;
+  created_at: string;
+  updated_at: string;
+  inspection?: {
+    id: number;
+    sample_reference?: string | null;
+    product?: { name: string } | null;
+    batch?: { batch_number: string } | null;
+  };
+}
+
+export type ActionStatus = 'open' | 'in_progress' | 'completed' | 'closed' | 'reopened';
+
+export interface CorrectiveActionEvidence {
+  id: number;
+  corrective_action_id: number;
+  submitted_by_id: number;
+  file_path?: string | null;
+  original_filename?: string | null;
+  has_file: boolean;
+  description?: string | null;
+  notes?: string | null;
+  submitted_at: string;
+  submitted_by?: {
+    id: number;
+    name: string;
+    email?: string;
+    role: string;
+  };
+}
+
+export interface CorrectiveAction {
+  id: number;
+  defect_id: number;
+  owner_id: number;
+  target_date?: string | null;
+  notes?: string | null;
+  status: ActionStatus;
+  completion_notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  owner?: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+  };
+  evidence?: CorrectiveActionEvidence[];
+  evidence_count?: number;
+  defect?: Defect;
+}
+
+export interface BatchDecisionAdvisory {
+  code: string;
+  message: string;
+}
+
+export interface BatchDecisionContext {
+  batch_id: number;
+  batch_number: string;
+  batch_status: string;
+  total_inspected: number;
+  total_reviewed: number;
+  unreviewed_inspections: number;
+  total_confirmed_defects: number;
+  open_defects: number;
+  critical_defects_open: number;
+  total_open_actions: number;
+  total_items: number;
+  analyzed_items: number;
+  uploaded_items: number;
+  pending_upload_items: number;
+  advisories: BatchDecisionAdvisory[];
+  release_blocked: boolean;
+}
+
+export interface BatchDecision {
+  id: number;
+  batch_id: number;
+  decision: 'hold' | 'release';
+  reason: string;
+  decided_by_id: number;
+  decided_by?: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+  };
+  decision_timestamp: string;
+  total_inspected?: number | null;
+  total_reviewed?: number | null;
+  total_confirmed_defects?: number | null;
+  total_open_actions?: number | null;
+  advisories_acknowledged: boolean;
+  evidence_snapshot?: BatchDecisionContext | null;
 }

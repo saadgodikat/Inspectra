@@ -39,7 +39,7 @@ def list_defects(current_user):
 
     total = query.count()
     defects = (
-        query.order_by(Defect.created_at.desc())
+        query.order_by(Defect.id.asc())
         .offset((page - 1) * per_page)
         .limit(per_page)
         .all()

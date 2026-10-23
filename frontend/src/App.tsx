@@ -29,6 +29,9 @@ const UsersPage = React.lazy(() =>
 const DashboardPage = React.lazy(() =>
   import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage }))
 );
+const ChatbotPage = React.lazy(() =>
+  import('./pages/ChatbotPage').then((m) => ({ default: m.ChatbotPage }))
+);
 
 /* ── Route loading fallback ── */
 const PageLoader: React.FC = () => (
@@ -78,6 +81,7 @@ export const App: React.FC = () => {
 
               {/* Statistical Process Control & Pareto Yield Analytics */}
               <Route path="analytics" element={<QualityAnalyticsPage />} />
+              <Route path="chatbot" element={<ChatbotPage />} />
 
               {/* Products & Lots Catalog */}
               <Route path="products" element={<ProductsBatchesPage />} />

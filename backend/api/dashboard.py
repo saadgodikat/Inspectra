@@ -35,13 +35,31 @@ def get_dashboard(current_user):
 
     # --- First Pass Yield ---
     total_reviewed = inspection_counts.get(InspectionStatus.REVIEWED.value, 0)
-    # Inspections that are reviewed AND have zero defects
-    inspections_with_defects = (
+    # Inspections that are reviewed AND have defects recorded
+    reviewed_with_defects = (
         db.session.query(func.count(func.distinct(Defect.inspection_id)))
+        .join(Inspection, Defect.inspection_id == Inspection.id)
+        .filter(Inspection.status == InspectionStatus.REVIEWED.value)
         .scalar() or 0
     )
-    passed = max(0, total_reviewed - inspections_with_defects)
+    passed = max(0, total_reviewed - reviewed_with_defects)
     fpy = round((passed / total_reviewed * 100), 1) if total_reviewed > 0 else None
+
+    # --- Separate AI suggestions (unreviewed) from human-confirmed defects ---
+    from backend.models.ml_result import MLResult
+    ai_flagged_unreviewed = (
+        db.session.query(func.count(MLResult.id))
+        .join(Inspection, MLResult.inspection_id == Inspection.id)
+        .filter(
+            MLResult.predicted_class == "defective",
+            Inspection.status.in_([
+                InspectionStatus.PENDING_REVIEW.value,
+                InspectionStatus.PROCESSING.value,
+                InspectionStatus.PENDING_UPLOAD.value,
+            ]),
+        )
+        .scalar() or 0
+    )
 
     # --- Batch pipeline ---
     batch_counts = dict(
@@ -51,7 +69,7 @@ def get_dashboard(current_user):
     )
     total_batches = sum(batch_counts.values())
 
-    # --- Defect counts by severity ---
+    # --- Defect counts by severity (human confirmed) ---
     defect_counts = dict(
         db.session.query(Defect.severity, func.count(Defect.id))
         .group_by(Defect.severity)
@@ -72,6 +90,16 @@ def get_dashboard(current_user):
 
     return jsonify({
         "fpy_percent": fpy,
+        "fpy_metric": {
+            "rate": fpy,
+            "passed": passed,
+            "reviewed": total_reviewed,
+            "formula": "Passed Reviewed Inspections / Total Reviewed Inspections",
+        },
+        "ai_flags": {
+            "unreviewed_suggestions": ai_flagged_unreviewed,
+            "note": "AI predictions pending human review decision; not counted as confirmed defects",
+        },
         "inspections": {
             "total": total_inspections,
             "by_status": inspection_counts,
@@ -88,6 +116,7 @@ def get_dashboard(current_user):
             "by_severity": defect_counts,
             "critical": defect_counts.get(DefectSeverity.CRITICAL.value, 0),
             "high": defect_counts.get(DefectSeverity.HIGH.value, 0),
+            "note": "Human-confirmed defects only",
         },
         "active_products": active_products,
         "recent_inspections": [i.to_dict(include_details=True) for i in recent],

@@ -98,7 +98,10 @@ PERMISSION_MATRIX: dict[str, set[str]] = {
     },
 
     # --- Batch decisions ---
-    "batch_decision.create": {UserRole.QUALITY_MANAGER.value},
+    "batch_decision.create": {
+        UserRole.QUALITY_MANAGER.value,
+        UserRole.SUPERVISOR.value,
+    },
     "batch_decision.view": {
         UserRole.INSPECTOR.value,
         UserRole.SUPERVISOR.value,
@@ -114,6 +117,11 @@ PERMISSION_MATRIX: dict[str, set[str]] = {
 
     # --- GenAI ---
     "genai.query": {
+        UserRole.SUPERVISOR.value,
+        UserRole.QUALITY_MANAGER.value,
+    },
+    "chatbot.query": {
+        UserRole.INSPECTOR.value,
         UserRole.SUPERVISOR.value,
         UserRole.QUALITY_MANAGER.value,
     },

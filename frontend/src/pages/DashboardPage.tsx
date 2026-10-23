@@ -1,45 +1,23 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { authApi, inspectionsApi, productsApi, batchesApi } from '../api/client';
-import type { HealthStatus, Inspection, Product, Batch } from '../types';
+import { dashboardApi, type DashboardStats } from '../api/client';
 import { useNavigate } from 'react-router-dom';
-
-/* ── Shift helper ── */
-const SHIFT_LABELS: Record<number, string> = { 0: 'NIGHT', 1: 'DAY', 2: 'SWING' };
-
-const getShift = () => {
-  const h = new Date().getHours();
-  if (h >= 6 && h < 14) return 1;
-  if (h >= 14 && h < 22) return 2;
-  return 0;
-};
 
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [inspections, setInspections] = useState<Inspection[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [utcTime, setUtcTime] = useState('');
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [healthRes, inspRes, prodRes, batchRes] = await Promise.allSettled([
-        authApi.getHealth(),
-        inspectionsApi.list({ per_page: 50 }),
-        productsApi.list(),
-        batchesApi.list(),
-      ]);
-      if (healthRes.status === 'fulfilled') setHealth(healthRes.value);
-      if (inspRes.status === 'fulfilled') setInspections(inspRes.value.inspections);
-      if (prodRes.status === 'fulfilled') setProducts(prodRes.value.products);
-      if (batchRes.status === 'fulfilled') setBatches(batchRes.value.batches);
-    } catch {
-      /* graceful degrade */
+      setDashboardStats(await dashboardApi.get());
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Failed to load dashboard metrics.');
     } finally {
       setLoading(false);
     }
@@ -49,53 +27,31 @@ export const DashboardPage: React.FC = () => {
     fetchAll();
   }, [fetchAll]);
 
-  useEffect(() => {
-    const tick = () => setUtcTime(new Date().toISOString().slice(11, 19) + ' UTC');
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  /* ── Computed KPIs ── */
-  const totalInspections = inspections.length;
-  const pendingReview = inspections.filter((i) => i.status === 'pending_review').length;
-  const processingCount = inspections.filter((i) => i.status === 'processing').length;
-  const reviewedCount = inspections.filter((i) => i.status === 'reviewed').length;
-  const failedCount = inspections.filter((i) => i.status === 'processing_failed').length;
-  const fpy = totalInspections > 0 ? ((reviewedCount / totalInspections) * 100).toFixed(1) : '—';
-
-  const activeBatches = batches.filter((b) => !['archived', 'released'].includes(b.status)).length;
-  const releasedBatches = batches.filter((b) => b.status === 'released').length;
-  const onHoldBatches = batches.filter((b) => b.status === 'on_hold').length;
-  const activeProducts = products.filter((p) => p.is_active).length;
-
-  const shift = getShift();
-  const shiftLabel = SHIFT_LABELS[shift];
-
-  const recentInspections = [...inspections]
-    .sort((a, b) => new Date(b.inspection_timestamp).getTime() - new Date(a.inspection_timestamp).getTime())
-    .slice(0, 8);
-
-  const statusColor = (s: string) => {
-    switch (s) {
-      case 'pending_upload': return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
-      case 'processing': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
-      case 'pending_review': return 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30';
-      case 'reviewed': return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
-      case 'processing_failed': return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
-      default: return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
-    }
-  };
+  const inspectionCounts = dashboardStats?.inspections.by_status ?? {};
+  const batchCounts = dashboardStats?.batches.by_status ?? {};
+  const totalInspections = dashboardStats?.inspections.total ?? 0;
+  const pendingReview = inspectionCounts.pending_review ?? 0;
+  const reviewedCount = dashboardStats?.fpy_metric?.reviewed ?? inspectionCounts.reviewed ?? 0;
+  const passedCount = dashboardStats?.fpy_metric?.passed ?? 0;
+  const unreviewedAiFlags = dashboardStats?.ai_flags?.unreviewed_suggestions ?? 0;
+  const confirmedDefectsCount = dashboardStats?.defects.total ?? 0;
+  const totalBatches = dashboardStats?.batches.total ?? 0;
+  const releasedBatches = batchCounts.released ?? 0;
+  const onHoldBatches = batchCounts.on_hold ?? 0;
+  const activeBatches = totalBatches - releasedBatches - (batchCounts.archived ?? 0);
+  const activeProducts = dashboardStats?.active_products ?? 0;
+  const recentInspections = (dashboardStats?.recent_inspections ?? []).slice(0, 8);
 
   const batchStatusColor = (s: string) => {
     switch (s) {
-      case 'created': return 'bg-slate-800 text-slate-300 border-slate-700';
+      case 'created': return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
       case 'in_production': return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
-      case 'produced': return 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30';
+      case 'produced': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
       case 'under_inspection': return 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30';
-      case 'on_hold': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+      case 'on_hold': return 'bg-orange-500/15 text-orange-400 border-orange-500/30';
       case 'released': return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
-      default: return 'bg-slate-800/80 text-slate-400 border-slate-700/60';
+      case 'archived': return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
+      default: return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
     }
   };
 
@@ -108,23 +64,20 @@ export const DashboardPage: React.FC = () => {
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3 mb-2">
-              <span className="px-2.5 py-0.5 rounded bg-primary/15 border border-primary/30 text-primary text-label-sm font-mono font-bold uppercase tracking-wider flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                SHIFT {String(shift).padStart(2, '0')} ({shiftLabel})
-              </span>
-              <span className="px-2.5 py-0.5 rounded bg-tertiary/10 border border-tertiary/25 text-tertiary text-label-sm font-mono uppercase tracking-wider">
-                {utcTime}
-              </span>
-            </div>
             <h1 className="text-headline-lg font-headline text-on-surface tracking-tight font-bold">
               Command Center
             </h1>
             <p className="mt-1 text-body-md text-on-surface-variant leading-relaxed max-w-xl">
               Welcome back, <span className="font-semibold text-primary">{user?.name}</span>.
-              Real-time overview of quality operations across all active production lines.
+              Persisted overview of inspection and batch quality records.
             </p>
           </div>
+
+          {loadError && (
+            <div role="alert" className="rounded-xl border border-error/30 bg-error-container/20 px-4 py-3 text-body-sm text-error">
+              Dashboard metrics could not be loaded: {loadError}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -148,27 +101,31 @@ export const DashboardPage: React.FC = () => {
       {/* ── KPI Ribbon ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
         {[
-          { label: 'Total Inspections', value: totalInspections, icon: 'fact_check', accent: 'text-on-surface' },
-          { label: 'Pending Review', value: pendingReview, icon: 'pending_actions', accent: 'text-cyan-400' },
-          { label: 'Processing', value: processingCount, icon: 'hourglass_top', accent: 'text-amber-400' },
-          { label: 'Reviewed / Pass', value: reviewedCount, icon: 'check_circle', accent: 'text-emerald-400' },
-          { label: 'Failed', value: failedCount, icon: 'error', accent: 'text-rose-400' },
-          { label: 'Active Batches', value: activeBatches, icon: 'inventory_2', accent: 'text-blue-400' },
-          { label: 'Released', value: releasedBatches, icon: 'verified', accent: 'text-emerald-400' },
-          { label: 'On Hold', value: onHoldBatches, icon: 'block', accent: 'text-amber-400' },
+          { label: 'Total Inspections', value: totalInspections, sub: 'All runs', icon: 'fact_check', accent: 'text-on-surface' },
+          { label: 'Pending Review', value: pendingReview, sub: 'Needs human signoff', icon: 'pending_actions', accent: 'text-cyan-400' },
+          { label: 'Passed Inspections', value: passedCount, sub: `${reviewedCount > 0 ? ((passedCount / reviewedCount) * 100).toFixed(0) : 0}% of reviewed`, icon: 'check_circle', accent: 'text-emerald-400' },
+          { label: 'AI Flags (Unreviewed)', value: unreviewedAiFlags, sub: 'Model suggestion only', icon: 'smart_toy', accent: 'text-amber-400' },
+          { label: 'Confirmed Defects', value: confirmedDefectsCount, sub: 'Human verified', icon: 'warning', accent: 'text-rose-400' },
+          { label: 'Active Batches', value: activeBatches, sub: `${releasedBatches} released`, icon: 'inventory_2', accent: 'text-blue-400' },
+          { label: 'Batches On Hold', value: onHoldBatches, sub: 'Quality quarantine', icon: 'block', accent: 'text-amber-400' },
         ].map((kpi) => (
           <div
             key={kpi.label}
-            className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-outline-variant/40 transition-colors group"
+            className="p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-outline-variant/40 transition-colors group flex flex-col justify-between"
           >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-label-sm text-outline font-mono uppercase tracking-wider truncate">{kpi.label}</span>
-              <span className={`material-symbols-outlined text-[16px] ${kpi.accent} opacity-60 group-hover:opacity-100 transition-opacity`}>
-                {kpi.icon}
-              </span>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] text-outline font-mono uppercase tracking-wider truncate">{kpi.label}</span>
+                <span className={`material-symbols-outlined text-[16px] ${kpi.accent} opacity-60 group-hover:opacity-100 transition-opacity`}>
+                  {kpi.icon}
+                </span>
+              </div>
+              <div className={`text-xl font-bold font-mono ${kpi.accent}`}>
+                {loading ? '—' : kpi.value}
+              </div>
             </div>
-            <div className={`text-xl font-bold font-mono ${kpi.accent}`}>
-              {loading ? '—' : kpi.value}
+            <div className="text-[10px] text-outline/70 font-mono mt-1 truncate">
+              {kpi.sub}
             </div>
           </div>
         ))}
@@ -177,39 +134,11 @@ export const DashboardPage: React.FC = () => {
       {/* ── Main Grid: 2 columns ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-        {/* ── Left: System Health + Recent Inspections ── */}
+        {/* ── Left: Catalog + Recent Inspections ── */}
         <div className="xl:col-span-2 space-y-6">
 
-          {/* System Health Strip */}
+          {/* Catalog Summary */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-label-sm text-outline font-mono uppercase tracking-wider">API Server</span>
-                <span className="material-symbols-outlined text-[18px] text-emerald-400">dns</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-body-md font-semibold text-on-surface">
-                  {health?.status === 'healthy' ? 'Operational' : 'Connecting…'}
-                </span>
-              </div>
-              <p className="text-label-sm text-outline mt-1 font-mono">REST API</p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Database</span>
-                <span className="material-symbols-outlined text-[18px] text-blue-400">database</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[14px] text-emerald-400">check_circle</span>
-                <span className="text-body-md font-semibold text-on-surface">
-                  {health?.database === 'connected' ? 'Connected' : 'Syncing'}
-                </span>
-              </div>
-              <p className="text-label-sm text-outline mt-1 font-mono">ORM + Migrations</p>
-            </div>
-
             <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Catalog</span>
@@ -218,7 +147,7 @@ export const DashboardPage: React.FC = () => {
               <div className="text-body-md font-semibold text-on-surface">
                 {activeProducts} Products
               </div>
-              <p className="text-label-sm text-outline mt-1 font-mono">{batches.length} total batches</p>
+              <p className="text-label-sm text-outline mt-1 font-mono">{totalBatches} total batches</p>
             </div>
           </div>
 
@@ -260,7 +189,7 @@ export const DashboardPage: React.FC = () => {
                       <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">ID</th>
                       <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Product</th>
                       <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Batch</th>
-                      <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Status</th>
+                      <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Batch Status</th>
                       <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Images</th>
                       <th className="py-2.5 px-5 text-label-sm font-mono font-semibold uppercase tracking-wider">Timestamp</th>
                     </tr>
@@ -282,8 +211,10 @@ export const DashboardPage: React.FC = () => {
                           {insp.batch?.batch_number || `#${insp.batch_id}`}
                         </td>
                         <td className="py-3 px-5">
-                          <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium border ${statusColor(insp.status)}`}>
-                            {insp.status.replace(/_/g, ' ').toUpperCase()}
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium border ${batchStatusColor(insp.batch?.status ?? 'unknown')}`}>
+                            {insp.batch?.status
+                              ? insp.batch.status.replace(/_/g, ' ').toUpperCase()
+                              : 'STATUS UNAVAILABLE'}
                           </span>
                         </td>
                         <td className="py-3 px-5 text-body-sm text-on-surface-variant font-mono">
@@ -306,25 +237,21 @@ export const DashboardPage: React.FC = () => {
         {/* ── Right Sidebar ── */}
         <div className="space-y-6">
 
-          {/* FPY Gauge */}
+          {/* Metric Source of Truth Card */}
           <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">First Pass Yield</span>
-              <span className="material-symbols-outlined text-[18px] text-emerald-400">speed</span>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="material-symbols-outlined text-[18px] text-primary">data_check</span>
+              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Metric Source of Truth</span>
             </div>
-            <div className="text-center py-4">
-              <div className="text-4xl font-bold font-mono text-emerald-400">
-                {fpy === '—' ? '—' : `${fpy}%`}
+            <div className="space-y-2 text-[11px] font-mono">
+              <div className="p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
+                <span className="text-amber-400 font-semibold uppercase block mb-0.5">AI Flagged Predictions</span>
+                <p className="text-outline leading-tight">Pre-review model classifications. Displayed as decision support; never counted as confirmed defects.</p>
               </div>
-              <p className="text-label-sm text-outline mt-2 font-mono">
-                {reviewedCount} / {totalInspections} inspections passed
-              </p>
-            </div>
-            <div className="w-full h-2 rounded-full bg-surface-container-high overflow-hidden mt-2">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-700"
-                style={{ width: fpy === '—' ? '0%' : `${Math.min(parseFloat(fpy), 100)}%` }}
-              />
+              <div className="p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
+                <span className="text-primary font-semibold uppercase block mb-0.5">Confirmed Defects</span>
+                <p className="text-outline leading-tight">Durable findings created exclusively by an authorized human review decision or supervisor override.</p>
+              </div>
             </div>
           </div>
 
@@ -335,13 +262,14 @@ export const DashboardPage: React.FC = () => {
             </div>
             <div className="space-y-2.5">
               {[
-                { label: 'Pending Upload',   key: 'pending_upload',   color: 'bg-slate-400' },
-                { label: 'Processing',       key: 'processing',       color: 'bg-amber-400' },
-                { label: 'Pending Review',   key: 'pending_review',   color: 'bg-cyan-400' },
-                { label: 'Reviewed',         key: 'reviewed',         color: 'bg-emerald-400' },
-                { label: 'Failed',           key: 'processing_failed',color: 'bg-rose-400' },
+                { label: 'Pending Upload', key: 'pending_upload', color: 'bg-slate-400' },
+                { label: 'Processing', key: 'processing', color: 'bg-amber-400' },
+                { label: 'Pending Review', key: 'pending_review', color: 'bg-cyan-400' },
+                { label: 'Reviewed', key: 'reviewed', color: 'bg-emerald-400' },
+                { label: 'Needs More Evidence', key: 'needs_more_evidence', color: 'bg-orange-400' },
+                { label: 'Failed', key: 'processing_failed', color: 'bg-rose-400' },
               ].map(({ label, key, color }) => {
-                const count = inspections.filter((i) => i.status === key).length;
+                const count = inspectionCounts[key] ?? 0;
                 return (
                   <div key={key} className="flex items-center gap-3">
                     <span className={`w-2 h-2 rounded-full ${color}`} />
@@ -351,40 +279,6 @@ export const DashboardPage: React.FC = () => {
                 );
               })}
             </div>
-          </div>
-
-          {/* Batch Pipeline */}
-          <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Batch Pipeline</span>
-              <button
-                onClick={() => navigate('/products')}
-                className="text-label-sm text-primary font-mono hover:underline"
-              >
-                View →
-              </button>
-            </div>
-            {batches.length === 0 ? (
-              <p className="text-body-sm text-outline text-center py-4 font-mono">No batches registered</p>
-            ) : (
-              <div className="space-y-2">
-                {batches.slice(0, 6).map((b) => (
-                  <div
-                    key={b.id}
-                    className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-surface-container/30 transition-colors cursor-pointer"
-                    onClick={() => navigate('/products')}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="material-symbols-outlined text-[14px] text-outline">package_2</span>
-                      <span className="text-body-sm font-mono text-on-surface truncate">{b.batch_number}</span>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium border whitespace-nowrap ${batchStatusColor(b.status)}`}>
-                      {b.status.replace(/_/g, ' ').toUpperCase()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* Role Permission Quick Card */}

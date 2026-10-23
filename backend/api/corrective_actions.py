@@ -4,7 +4,7 @@ import os
 import uuid
 from datetime import date
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from backend.extensions import db
 from backend.models.corrective_action import CorrectiveAction, ActionStatus
@@ -69,6 +69,8 @@ def get_corrective_action(action_id, current_user):
         raise NotFoundError("Corrective action not found")
 
     data = action.to_dict()
+    if action.defect:
+        data["defect"] = action.defect.to_dict()
     data["evidence"] = [e.to_dict() for e in action.evidence.order_by(CorrectiveActionEvidence.submitted_at.asc()).all()]
     return jsonify({"corrective_action": data}), 200
 
@@ -249,3 +251,28 @@ def submit_evidence(action_id, current_user):
     db.session.commit()
 
     return jsonify({"message": "Evidence submitted", "evidence": evidence.to_dict()}), 201
+
+
+@corrective_actions_bp.route("/<int:action_id>/evidence/<int:evidence_id>/file", methods=["GET"])
+@require_permission("corrective_action.view")
+def get_evidence_file(action_id, evidence_id, current_user):
+    """Securely serve authenticated repair evidence file."""
+    evidence = db.session.get(CorrectiveActionEvidence, evidence_id)
+    if not evidence or evidence.corrective_action_id != action_id:
+        raise NotFoundError("Evidence not found")
+    if not evidence.file_path:
+        raise NotFoundError("Evidence has no attached file")
+
+    base_dir = get_upload_base_dir()
+    abs_path = os.path.join(base_dir, evidence.file_path)
+    if not os.path.isfile(abs_path):
+        raise NotFoundError("Evidence file is missing from storage")
+
+    response = send_file(
+        abs_path,
+        as_attachment=False,
+        download_name=evidence.original_filename or "repair_evidence.jpg",
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return response

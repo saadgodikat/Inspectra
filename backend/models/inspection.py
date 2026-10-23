@@ -100,6 +100,8 @@ class Inspection(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "image_count": self.images.count(),
+            "item_count": self.items.count(),
+            "confirmed_defects_count": self.defects.count(),
         }
         if include_details:
             if self.product:
@@ -136,6 +138,34 @@ class Inspection(db.Model):
                 data["ml_results"] = [r.to_dict() for r in self.ml_results.order_by(db.asc("id")).all()]
             except Exception:
                 data["ml_results"] = []
+            try:
+                data["reviews"] = [r.to_dict() for r in self.reviews.order_by(db.asc("id")).all()]
+            except Exception:
+                data["reviews"] = []
+            try:
+                data["defects"] = [d.to_dict() for d in self.defects.order_by(db.asc("id")).all()]
+            except Exception:
+                data["defects"] = []
+            if self.reinspection_of_id and self.reinspection_of:
+                data["reinspection_of"] = {
+                    "id": self.reinspection_of.id,
+                    "sample_reference": self.reinspection_of.sample_reference,
+                    "status": self.reinspection_of.status,
+                    "created_at": self.reinspection_of.created_at.isoformat() if self.reinspection_of.created_at else None,
+                }
+            try:
+                data["reinspections"] = [
+                    {
+                        "id": reinspec.id,
+                        "sample_reference": reinspec.sample_reference,
+                        "status": reinspec.status,
+                        "created_at": reinspec.created_at.isoformat() if reinspec.created_at else None,
+                        "inspector_name": reinspec.inspector.name if reinspec.inspector else None,
+                    }
+                    for reinspec in self.reinspections
+                ]
+            except Exception:
+                data["reinspections"] = []
         return data
 
     def __repr__(self):

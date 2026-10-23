@@ -52,7 +52,8 @@ class Config:
 
     # GenAI / Ollama
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma2:2b")
+    OLLAMA_REQUEST_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_REQUEST_TIMEOUT_SECONDS", "300"))
 
     # CORS
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")

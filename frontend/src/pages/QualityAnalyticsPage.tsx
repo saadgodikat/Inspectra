@@ -1,21 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import api from '../api/client';
-
-interface DashboardStats {
-  inspections: {
-    total: number;
-    by_status: Record<string, number>;
-  };
-  defects: {
-    total: number;
-    by_severity: Record<string, number>;
-  };
-  batches: {
-    total: number;
-    by_status: Record<string, number>;
-  };
-  fpy: number | null;
-}
+import { dashboardApi, type DashboardStats } from '../api/client';
 
 export const QualityAnalyticsPage: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -24,8 +8,8 @@ export const QualityAnalyticsPage: React.FC = () => {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<DashboardStats>('/dashboard');
-      setStats(res.data);
+      const data = await dashboardApi.get();
+      setStats(data);
     } catch {
       setStats(null);
     } finally {
@@ -35,9 +19,12 @@ export const QualityAnalyticsPage: React.FC = () => {
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  const fpy = stats?.fpy != null ? stats.fpy.toFixed(1) : null;
+  const fpy = stats?.fpy_percent != null ? stats.fpy_percent.toFixed(1) : null;
+  const passedRuns = stats?.fpy_metric?.passed ?? 0;
+  const reviewedRuns = stats?.fpy_metric?.reviewed ?? 0;
   const totalInspections = stats?.inspections.total ?? 0;
   const totalDefects = stats?.defects.total ?? 0;
+  const aiFlags = stats?.ai_flags?.unreviewed_suggestions ?? 0;
   const defectsBySeverity = stats?.defects.by_severity ?? {};
   const inspectionsByStatus = stats?.inspections.by_status ?? {};
   const batchesByStatus = stats?.batches.by_status ?? {};
@@ -52,10 +39,13 @@ export const QualityAnalyticsPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-space-md">
         <div className="flex flex-col gap-space-xs">
-          <span className="text-label-sm uppercase tracking-widest font-mono text-primary font-bold">TELEMETRY // SPC NODE</span>
+          <span className="text-label-sm uppercase tracking-widest font-mono text-primary font-bold">OPERATIONS // YIELD INTELLIGENCE</span>
           <h1 className="font-headline text-headline-lg text-on-surface tracking-tight font-bold">
-            Quality Analytics &amp; SPC Telemetry
+            Quality Analytics &amp; Yield Intelligence
           </h1>
+          <p className="text-body-sm text-on-surface-variant font-mono">
+            Persisted metrics computed directly from inspection records and human decisions.
+          </p>
         </div>
         <button
           onClick={fetchStats}
@@ -67,57 +57,80 @@ export const QualityAnalyticsPage: React.FC = () => {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-space-md">
+        {/* FPY Card */}
         <div className="flex flex-col justify-between p-space-md bg-surface-container-low rounded-xl border border-surface-container-high shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-label-sm font-mono uppercase text-outline">First Pass Yield</span>
             <span className="material-symbols-outlined text-primary text-[18px]">verified</span>
           </div>
-          <span className="font-headline text-headline-xl text-on-surface font-mono font-semibold my-space-sm">
+          <span className="font-headline text-headline-xl text-emerald-400 font-mono font-bold my-space-xs">
             {loading ? '—' : fpy != null ? `${fpy}%` : '—'}
           </span>
-          <span className="text-body-sm text-on-surface-variant font-mono">
-            {loading ? '' : `${inspectionsByStatus['reviewed'] ?? 0} / ${totalInspections} reviewed`}
-          </span>
+          <div className="text-[11px] text-on-surface-variant font-mono space-y-0.5">
+            <div>{passedRuns} passed / {reviewedRuns} reviewed</div>
+            <div className="text-outline text-[10px]">Formula: Passed / Total Reviewed</div>
+          </div>
         </div>
 
+        {/* Confirmed Defects Card */}
         <div className="flex flex-col justify-between p-space-md bg-surface-container-low rounded-xl border border-surface-container-high shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-label-sm font-mono uppercase text-outline">Total Defects</span>
+            <span className="text-label-sm font-mono uppercase text-outline">Confirmed Defects</span>
             <span className="material-symbols-outlined text-error text-[18px]">warning</span>
           </div>
-          <span className="font-headline text-headline-xl text-on-surface font-mono font-semibold my-space-sm">
+          <span className="font-headline text-headline-xl text-error font-mono font-bold my-space-xs">
             {loading ? '—' : totalDefects}
           </span>
-          <span className="text-body-sm text-on-surface-variant font-mono">
-            {loading ? '' : `${defectsBySeverity['critical'] ?? 0} critical`}
-          </span>
+          <div className="text-[11px] text-on-surface-variant font-mono space-y-0.5">
+            <div>{defectsBySeverity['critical'] ?? 0} critical • {defectsBySeverity['major'] ?? 0} major</div>
+            <div className="text-outline text-[10px]">Human-verified only</div>
+          </div>
         </div>
 
+        {/* AI Suggestions Card */}
+        <div className="flex flex-col justify-between p-space-md bg-surface-container-low rounded-xl border border-surface-container-high shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-label-sm font-mono uppercase text-outline">AI Flags (Pending)</span>
+            <span className="material-symbols-outlined text-amber-400 text-[18px]">smart_toy</span>
+          </div>
+          <span className="font-headline text-headline-xl text-amber-400 font-mono font-bold my-space-xs">
+            {loading ? '—' : aiFlags}
+          </span>
+          <div className="text-[11px] text-on-surface-variant font-mono space-y-0.5">
+            <div>Model suggestions</div>
+            <div className="text-outline text-[10px]">Awaiting human review</div>
+          </div>
+        </div>
+
+        {/* Total Inspections Card */}
         <div className="flex flex-col justify-between p-space-md bg-surface-container-low rounded-xl border border-surface-container-high shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-label-sm font-mono uppercase text-outline">Total Inspections</span>
             <span className="material-symbols-outlined text-tertiary text-[18px]">fact_check</span>
           </div>
-          <span className="font-headline text-headline-xl text-on-surface font-mono font-semibold my-space-sm">
+          <span className="font-headline text-headline-xl text-on-surface font-mono font-bold my-space-xs">
             {loading ? '—' : totalInspections}
           </span>
-          <span className="text-body-sm text-on-surface-variant font-mono">
-            {loading ? '' : `${inspectionsByStatus['pending_review'] ?? 0} pending review`}
-          </span>
+          <div className="text-[11px] text-on-surface-variant font-mono space-y-0.5">
+            <div>{inspectionsByStatus['pending_review'] ?? 0} pending review</div>
+            <div className="text-outline text-[10px]">{inspectionsByStatus['reviewed'] ?? 0} completed</div>
+          </div>
         </div>
 
+        {/* Batches on Hold Card */}
         <div className="flex flex-col justify-between p-space-md bg-surface-container-low rounded-xl border border-surface-container-high shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-label-sm font-mono uppercase text-outline">Batches On Hold</span>
-            <span className="material-symbols-outlined text-[18px]" style={{ color: '#f59e0b' }}>block</span>
+            <span className="material-symbols-outlined text-amber-400 text-[18px]">block</span>
           </div>
-          <span className="font-headline text-headline-xl font-mono font-semibold my-space-sm" style={{ color: '#f59e0b' }}>
+          <span className="font-headline text-headline-xl text-amber-400 font-mono font-bold my-space-xs">
             {loading ? '—' : batchesByStatus['on_hold'] ?? 0}
           </span>
-          <span className="text-body-sm text-on-surface-variant font-mono">
-            {loading ? '' : `${batchesByStatus['released'] ?? 0} released`}
-          </span>
+          <div className="text-[11px] text-on-surface-variant font-mono space-y-0.5">
+            <div>{batchesByStatus['released'] ?? 0} released</div>
+            <div className="text-outline text-[10px]">Under quality quarantine</div>
+          </div>
         </div>
       </div>
 

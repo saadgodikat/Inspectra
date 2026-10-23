@@ -47,7 +47,7 @@ class CorrectiveAction(db.Model):
     )
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "id": self.id,
             "defect_id": self.defect_id,
             "owner_id": self.owner_id,
@@ -60,6 +60,18 @@ class CorrectiveAction(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+        if self.owner:
+            data["owner"] = {
+                "id": self.owner.id,
+                "name": self.owner.name,
+                "email": self.owner.email,
+                "role": self.owner.role,
+            }
+        try:
+            data["evidence_count"] = self.evidence.count()
+        except Exception:
+            data["evidence_count"] = 0
+        return data
 
     def __repr__(self):
         return f"<CorrectiveAction {self.id} [{self.status}]>"

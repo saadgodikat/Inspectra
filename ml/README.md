@@ -4,9 +4,9 @@ This directory contains the machine learning components for **Inspectra — AI-P
 
 ## Scope & Architectural Principles
 
-- **Objective:** Train a binary image classification model (`good` vs `defective`) using a pretrained DINOv2 feature extractor with a trained classification head to inspect casting manufacturing components.
-- **Contract Boundary:** The ML model proposes an inspection observation (`predicted_class`, `scores`, `uncertainty_score`, `inference_ms`). It does **not** make human decisions, create final defect records, or release production batches.
-- **Decoupled Architecture:** ML training, evaluation, and data pipelines are completely decoupled from the Flask backend and React frontend.
+- **Objective:** Train and serve an EfficientNet-B0 binary image classification model (`good` vs `defective`) using ImageNet-1k pretrained features with a tailored classification head to inspect industrial casting components.
+- **Contract Boundary:** The ML model proposes an inspection observation (`predicted_class`, `scores`, `confidence_score`, `processing_duration_ms`). It does **not** make human decisions, create final defect records, or release production batches.
+- **Decoupled Architecture:** ML training, evaluation, and data pipelines are completely decoupled from the Flask backend and React frontend. The application consumes inference through a typed service interface (`backend.services.ml_service`).
 
 ---
 
@@ -16,99 +16,86 @@ This directory contains the machine learning components for **Inspectra — AI-P
 ml/
 ├── README.md               # This file
 ├── configs/
-│   └── casting_binary.yaml # Dataset & training configuration
+│   ├── casting_binary.yaml # Binary EfficientNet-B0 dataset & training configuration
+│   └── multiclass_defect.yaml # Multiclass classification config
 ├── data/
 │   ├── README.md           # Dataset acquisition, licensing & storage guide
-│   └── splits/             # Versioned, leakage-resistant split manifests (.csv)
+│   ├── splits/             # Binary versioned, leakage-resistant split manifests (.csv)
+│   └── splits_multiclass/  # Multiclass split manifests (.csv)
 ├── scripts/
 │   ├── inspect_dataset.py  # Phase ML-1: Dataset audit tool
-│   ├── create_splits.py    # Phase ML-2: Data splitting (future)
-│   ├── train.py            # Phase ML-3: DINOv2 baseline training (future)
-│   ├── evaluate.py         # Phase ML-4: Held-out evaluation (future)
-│   └── predict_one.py      # Phase ML-5: Local sample prediction CLI (future)
+│   ├── create_splits.py    # Phase ML-2: Leakage-safe split generator
+│   ├── train.py            # Phase ML-3: Baseline training pipeline
+│   ├── evaluate.py         # Phase ML-4: Held-out evaluation
+│   ├── train_multiclass.py # Multiclass defect classifier training
+│   └── evaluate_multiclass.py # Multiclass defect evaluation
 ├── src/
 │   └── inspectra_ml/       # Core reusable Python package
 │       ├── __init__.py
 │       ├── dataset.py
 │       ├── transforms.py
-│       ├── model.py
-│       └── inference.py
-├── artifacts/              # Trained weights & checkpoints (git-ignored)
+│       ├── model.py        # EfficientNet-B0 architecture
+│       └── inference.py    # Runtime inference & checkpoint loader
+├── artifacts/              # Trained weights & evaluation metrics
+│   ├── best_model.pth      # EfficientNet-B0 checkpoint (eval F1: 0.9669)
+│   ├── training_history.json
+│   └── test_predictions.json
 ├── reports/
 │   ├── dataset_audit.md    # Phase ML-1 dataset audit report
-│   └── evaluation.md       # Phase ML-4 model evaluation report (future)
-└── tests/
-    ├── conftest.py
-    ├── test_inspect_dataset.py # Automated tests for dataset auditing
-    └── test_create_splits.py   # Automated tests for leakage-safe splitting
+│   ├── splits_summary.md   # Phase ML-2 leakage-safe splits report
+│   ├── baseline_training.md# Phase ML-3 baseline training report
+│   └── heldout_evaluation.md # Phase ML-4 held-out evaluation report
+└── tests/                  # Automated pytest test suites (50+ tests)
 ```
 
 ---
 
-## Phase ML-1: Dataset Audit Execution
+## Reproducible Pipeline Commands
 
-Before training or splitting, run the dataset audit to inspect image integrity, format support, resolution, exact duplicate hashes, and class distribution:
-
+### Phase ML-1: Dataset Audit Execution
+Inspects image integrity, format support, resolution, exact duplicate hashes, and class distribution:
 ```bash
-# Run audit pointing to your dataset directory:
-python ml/scripts/inspect_dataset.py --data-dir ml/data/raw/casting_data
-
-# Or run with the default configuration:
 python ml/scripts/inspect_dataset.py --config ml/configs/casting_binary.yaml
-
-# Specify custom report output:
-python ml/scripts/inspect_dataset.py --data-dir /path/to/dataset --output ml/reports/dataset_audit.md
 ```
 
----
-
-## Phase ML-2: Leakage-Safe Data Splitting
-
-Create stratified, leakage-resistant split manifests (CSV + JSON) where all exact duplicate image groups are locked to the same split:
-
+### Phase ML-2: Leakage-Safe Data Splitting
+Creates stratified, leakage-resistant split manifests (CSV + JSON) where all exact duplicate image groups are locked to the same split:
 ```bash
-# Run splitting with default 70/15/15 ratio and seed 42:
-python ml/scripts/create_splits.py --data-dir ml/data/raw/casting_data --output-dir ml/data/splits
-
-# Or specify custom parameters:
 python ml/scripts/create_splits.py --train-ratio 0.70 --val-ratio 0.15 --test-ratio 0.15 --seed 42
 ```
 
----
-
-## Phase ML-3: Baseline Defect Classifier Training
-
-Train the EfficientNet-B0 binary classifier using ImageNet-1k pretrained features on `train.csv`, using `val.csv` for checkpoint and threshold selection:
-
+### Phase ML-3: Model Training
+Trains the EfficientNet-B0 classifier with ImageNet-1k pretrained features on `train.csv`, using `val.csv` for checkpoint and threshold selection:
 ```bash
 python ml/scripts/train.py --epochs 3 --batch-size 64 --lr 0.001 --seed 42
 ```
 
-Outputs generated:
-- `ml/artifacts/best_model.pth` (best model checkpoint based on validation F1)
-- `ml/artifacts/training_history.json` (epoch losses, metrics, and optimal threshold)
-- `ml/reports/baseline_training.md` (training progress and validation metrics)
-
----
-
-## Phase ML-4: Held-Out Test Set Evaluation
-
-Run leakage-verified, honest evaluation on the untouched `test.csv` split using the frozen validation threshold (`0.38`):
-
+### Phase ML-4: Held-Out Test Set Evaluation
+Executes honest evaluation on the untouched `test.csv` split using the frozen validation threshold (`0.38`):
 ```bash
 python ml/scripts/evaluate.py --threshold 0.38
 ```
-
 Outputs generated:
-- `ml/reports/heldout_evaluation.md` (full evaluation report with confusion matrix and error analysis)
+- `ml/reports/heldout_evaluation.md` (full evaluation report with confusion matrix, accuracy 96.15%, F1 0.9669)
 - `ml/artifacts/test_predictions.json` (per-sample prediction details)
+
+---
+
+## Runtime Inference & Failure Recovery
+
+The Flask application integrates ML inference via `backend.services.ml_service.process_inspection_image_ml`:
+1. **Loaded Checkpoint:** Automatically checks `ml/artifacts/best_model.pth`.
+2. **Schema Output:** Stores `predicted_class`, `confidence_score`, `raw_scores` (`good` vs `defective`), `model_name`, `model_version`, and `processing_duration_ms` in `MLResult`.
+3. **Resilience & Safe Recovery:** If checkpoint weights are unavailable, the image is corrupt, or an inference exception occurs:
+   - The inspection record and uploaded image file are strictly preserved.
+   - `Inspection.status` is set to `processing_failed` with the error captured in audit logs.
+   - The user or supervisor can manually review, re-analyze, or attach manual observations without losing evidence.
 
 ---
 
 ## Running Tests
 
-Run the full ML test suite (30 automated tests):
-
+Run the full ML test suite:
 ```bash
-pytest ml/tests -v
+.venv/bin/pytest ml/tests -v
 ```

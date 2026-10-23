@@ -7,14 +7,17 @@ from sqlalchemy import or_
 from backend.extensions import db
 from backend.models.batch import Batch, BatchStatus
 from backend.models.product import Product
-from backend.models.user import UserRole
 from backend.middleware.permissions import require_permission
-from backend.middleware.errors import NotFoundError, ValidationError, ConflictError, ForbiddenError
+from backend.middleware.errors import NotFoundError, ValidationError, ConflictError
 from backend.services.audit_service import log_audit_event
 
 batches_bp = Blueprint("batches", __name__, url_prefix="/api/batches")
 
 VALID_STATUSES = {s.value for s in BatchStatus}
+DECISION_MANAGED_STATUSES = {
+    BatchStatus.ON_HOLD.value,
+    BatchStatus.RELEASED.value,
+}
 
 
 @batches_bp.route("", methods=["GET"])
@@ -119,6 +122,8 @@ def create_batch(current_user):
 
     if status not in VALID_STATUSES:
         errors["status"] = f"Status must be one of: {', '.join(sorted(VALID_STATUSES))}"
+    elif status in DECISION_MANAGED_STATUSES:
+        errors["status"] = "Hold and release statuses must be set through the batch decision workflow"
 
     parsed_date = None
     if production_date_raw:
@@ -245,6 +250,10 @@ def update_batch(batch_id, current_user):
         st = (data["status"] or "").strip().lower()
         if st not in VALID_STATUSES:
             raise ValidationError(f"Status must be one of: {', '.join(sorted(VALID_STATUSES))}")
+        if st in DECISION_MANAGED_STATUSES:
+            raise ValidationError(
+                "Hold and release statuses must be set through the batch decision workflow"
+            )
         if st != batch.status:
             changes["status"] = {"from": batch.status, "to": st}
             batch.status = st
@@ -283,12 +292,9 @@ def update_batch_status(batch_id, current_user):
     if new_status not in VALID_STATUSES:
         raise ValidationError(f"Invalid status. Must be one of: {', '.join(sorted(VALID_STATUSES))}")
 
-    # Note: on_hold and released are exclusively managed via the batch_decision workflow.
-    # Supervisors cannot directly set these statuses.
-    SUPERVISOR_BLOCKED_STATUSES = {BatchStatus.ON_HOLD.value, BatchStatus.RELEASED.value}
-    if current_user.role == UserRole.SUPERVISOR.value and new_status in SUPERVISOR_BLOCKED_STATUSES:
-        raise ForbiddenError(
-            f"Status '{new_status}' can only be set by a Quality Manager via the batch decision workflow"
+    if new_status in DECISION_MANAGED_STATUSES:
+        raise ValidationError(
+            "Hold and release statuses must be set through the batch decision workflow"
         )
 
     old_status = batch.status

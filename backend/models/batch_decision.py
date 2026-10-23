@@ -24,6 +24,11 @@ class BatchDecision(db.Model):
     total_inspected = db.Column(db.Integer, nullable=True)
     total_reviewed = db.Column(db.Integer, nullable=True)
     total_confirmed_defects = db.Column(db.Integer, nullable=True)
+    total_open_actions = db.Column(db.Integer, nullable=True)
+    advisories_acknowledged = db.Column(
+        db.Boolean, nullable=False, default=False
+    )
+    evidence_snapshot = db.Column(db.JSON, nullable=True)
 
     # --- Relationships ---
     batch = db.relationship("Batch", back_populates="decisions")
@@ -36,6 +41,16 @@ class BatchDecision(db.Model):
             "decision": self.decision,
             "reason": self.reason,
             "decided_by_id": self.decided_by_id,
+            "decided_by": (
+                {
+                    "id": self.decided_by_user.id,
+                    "name": self.decided_by_user.name,
+                    "email": self.decided_by_user.email,
+                    "role": self.decided_by_user.role,
+                }
+                if self.decided_by_user
+                else None
+            ),
             "decision_timestamp": (
                 self.decision_timestamp.isoformat()
                 if self.decision_timestamp
@@ -44,6 +59,9 @@ class BatchDecision(db.Model):
             "total_inspected": self.total_inspected,
             "total_reviewed": self.total_reviewed,
             "total_confirmed_defects": self.total_confirmed_defects,
+            "total_open_actions": self.total_open_actions,
+            "advisories_acknowledged": self.advisories_acknowledged,
+            "evidence_snapshot": self.evidence_snapshot,
         }
 
     def __repr__(self):

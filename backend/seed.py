@@ -67,10 +67,10 @@ def register_seed_commands(app):
                 "description": "Galvanized cold-rolled steel bracket for suspension mountings.",
             },
             {
-                "product_code": "PRD-MET-003",
-                "name": "Helical Transmission Gear",
-                "category": "Powertrain",
-                "description": "Case-hardened helical gear for industrial robotics drive train.",
+                "product_code": "CAST-001",
+                "name": "Pump Impeller Casting",
+                "category": "Machined Castings",
+                "description": "Industrial pump impeller casting inspected by EfficientNet-B0 binary classifier (good/defective).",
             },
         ]
 
@@ -99,9 +99,9 @@ def register_seed_commands(app):
         """Create sample production batches."""
         flange = Product.query.filter_by(product_code="PRD-MET-001").first()
         bracket = Product.query.filter_by(product_code="PRD-MET-002").first()
-        gear = Product.query.filter_by(product_code="PRD-MET-003").first()
+        casting = Product.query.filter_by(product_code="CAST-001").first()
 
-        if not flange or not bracket:
+        if not flange or not bracket or not casting:
             click.echo("  ⚠️ Please run 'flask seed-products' first!")
             return
 
@@ -125,13 +125,13 @@ def register_seed_commands(app):
                 "supplier": "Vanguard Precision Metal",
             },
             {
-                "batch_number": "BAT-2026-G01",
-                "product_id": gear.id if gear else flange.id,
+                "batch_number": "BAT-2026-C01",
+                "product_id": casting.id,
                 "production_date": date(2026, 10, 20),
-                "quantity": 450,
-                "status": BatchStatus.IN_PRODUCTION.value,
-                "production_line": "Robotics Cell 1",
-                "supplier": "Kinetics Engineering",
+                "quantity": 500,
+                "status": BatchStatus.UNDER_INSPECTION.value,
+                "production_line": "Casting Line 1",
+                "supplier": "Apex Castings Corp",
             },
         ]
 

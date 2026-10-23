@@ -153,11 +153,16 @@ def create_review(current_user):
         defect_class = confirmed_class if decision == ReviewDecision.CORRECT.value else (
             ml_result.predicted_class if ml_result_id and ml_result else defect_category
         )
+        desc = defect_description
+        item_number = data.get("item_number")
+        if item_number is not None:
+            prefix = f"Item #{item_number}"
+            desc = f"{prefix}: {defect_description}" if defect_description else prefix
         defect = Defect(
             inspection_id=inspection_id,
             review_id=review.id,
             defect_category=defect_category or defect_class or "unclassified",
-            description=defect_description,
+            description=desc,
             severity=defect_severity,
             status=DefectStatus.OPEN.value,
             created_by_id=current_user.id,

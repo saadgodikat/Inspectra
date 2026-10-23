@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Sidebar } from '../components/Sidebar';
+import { ChatbotWidget } from '../components/ChatbotWidget';
 
 export const AppLayout: React.FC = () => {
   return (
@@ -13,6 +14,7 @@ export const AppLayout: React.FC = () => {
           <Outlet />
         </main>
       </div>
+      <ChatbotWidget />
     </div>
   );
 };

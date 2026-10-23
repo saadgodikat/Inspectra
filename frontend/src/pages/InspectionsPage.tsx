@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
-import { inspectionsApi, productsApi, batchesApi } from '../api/client';
-import type { Inspection, Product, Batch, SampleType, ItemsResponse, BulkUploadResult, AnalysisResult } from '../types';
+import { inspectionsApi, productsApi } from '../api/client';
+import type { Inspection, Product, ItemsResponse, BulkUploadResult, AnalysisResult } from '../types';
 import { ItemResultsPanel } from '../components/ItemResultsPanel';
 import { useAuth } from '../context/AuthContext';
 
@@ -16,10 +16,27 @@ interface TelemetryRun {
   defects: string;
   defectCount: number;
   fpy: string;
-  status: 'REJECTED / HOLD' | 'PASSED' | 'IN-PROGRESS';
+  batchStatus: string;
+  inspectionOutcome: 'REJECTED / HOLD' | 'PASSED' | 'IN-PROGRESS';
   station: string;
   backendInspection?: Inspection;
 }
+
+const getBatchStatusLabel = (status: string) =>
+  status === 'unknown' ? 'STATUS UNAVAILABLE' : status.replace(/_/g, ' ').toUpperCase();
+
+const getBatchStatusClass = (status: string) => {
+  switch (status) {
+    case 'created': return 'bg-surface-container text-on-surface-variant border-surface-container-high';
+    case 'in_production': return 'bg-blue-900/20 text-blue-400 border-blue-500/30';
+    case 'produced': return 'bg-primary/10 text-primary border-primary/30';
+    case 'under_inspection': return 'bg-tertiary/10 text-tertiary border-tertiary/30';
+    case 'on_hold': return 'bg-amber-900/20 text-amber-400 border-amber-500/30';
+    case 'released': return 'bg-green-900/20 text-green-400 border-green-500/30';
+    case 'archived': return 'bg-surface-container text-outline border-surface-container-high';
+    default: return 'bg-surface-container text-outline border-surface-container-high';
+  }
+};
 
 const getApiErrorMessage = (error: unknown, fallback: string) => {
   if (axios.isAxiosError<{ error?: string; details?: Record<string, string> }>(error)) {
@@ -34,14 +51,19 @@ const extractItemNumber = (filename: string): number | null => {
   return numbers ? Number(numbers[numbers.length - 1]) : null;
 };
 
+const todayDateInputValue = () => {
+  const today = new Date();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${today.getFullYear()}-${month}-${day}`;
+};
+
 export const InspectionsPage: React.FC = () => {
   const { user } = useAuth();
   const userCanOverride = user?.role === 'supervisor' || user?.role === 'quality_manager';
   // Real backend inspections state
   const [, setInspections] = useState<Inspection[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [batchesForSelectedProduct, setBatchesForSelectedProduct] = useState<Batch[]>([]);
-  const [isLoadingBatches, setIsLoadingBatches] = useState(false);
 
   // Telemetry Console State
   const [runs, setRuns] = useState<TelemetryRun[]>([]);
@@ -55,17 +77,19 @@ export const InspectionsPage: React.FC = () => {
   const [isCreatingRun, setIsCreatingRun] = useState(false);
   const [createForm, setCreateForm] = useState<{
     product_id: number;
-    batch_id: number;
     quantity: number;
+    production_date: string;
+    production_line: string;
+    supplier: string;
     sample_reference: string;
-    sample_type: SampleType;
     observations: string;
   }>({
     product_id: 0,
-    batch_id: 0,
     quantity: 1,
+    production_date: todayDateInputValue(),
+    production_line: '',
+    supplier: '',
     sample_reference: '',
-    sample_type: 'item',
     observations: '',
   });
 
@@ -122,21 +146,52 @@ export const InspectionsPage: React.FC = () => {
 
       // If backend has inspections, convert them and prepend to runs!
       if (inspRes.inspections && inspRes.inspections.length > 0) {
-        const backendRuns: TelemetryRun[] = inspRes.inspections.map((i) => ({
-          id: `INS-${i.id.toString().padStart(4, '0')}`,
-          sku: i.product?.name || `PROD-${i.product_id}`,
-          lot: i.batch?.batch_number ? `#${i.batch.batch_number}` : `#BATCH-${i.batch_id}`,
-          inspector: i.inspector?.name || 'Authorized QA',
-          avatar: i.inspector?.name ? i.inspector.name.slice(0, 2).toUpperCase() : 'QA',
-          timestamp: new Date(i.created_at).toTimeString().split(' ')[0],
-          sampleSize: `${i.images?.length || 1} units`,
-          defects: i.status === 'reviewed' ? '0' : 'EVAL',
-          defectCount: 0,
-          fpy: '99.1%',
-          status: i.status === 'reviewed' ? 'PASSED' : 'IN-PROGRESS',
-          station: 'Station Alpha - Optical SMT',
-          backendInspection: i,
-        }));
+        const backendRuns: TelemetryRun[] = inspRes.inspections.map((i) => {
+          const defectCount = i.confirmed_defects_count ?? (i.defects?.length ?? 0);
+          const itemCount = i.item_count ?? 0;
+          const isReviewed = i.status === 'reviewed';
+          const isFailed = i.status === 'processing_failed';
+
+          let runStatus: TelemetryRun['inspectionOutcome'] = 'IN-PROGRESS';
+          if (isReviewed) {
+            runStatus = defectCount > 0 ? 'REJECTED / HOLD' : 'PASSED';
+          } else if (isFailed) {
+            runStatus = 'REJECTED / HOLD';
+          }
+
+          const defectDisplay = isReviewed
+            ? `${defectCount}`
+            : i.status === 'pending_review'
+            ? 'PENDING EVAL'
+            : isFailed
+            ? 'FAIL'
+            : '--';
+
+          const analyzedItemCount = i.item_summary?.analyzed ?? 0;
+          const goodItemCount = i.item_summary?.good ?? 0;
+          const fpyDisplay = analyzedItemCount > 0
+            ? `${((goodItemCount / analyzedItemCount) * 100).toFixed(1)}%`
+            : '—';
+
+          const productionLine = i.batch?.production_line || i.sample_reference || 'Unassigned line';
+
+          return {
+            id: `INS-${i.id.toString().padStart(4, '0')}`,
+            sku: i.product?.name || `PROD-${i.product_id}`,
+            lot: i.batch?.batch_number ? `#${i.batch.batch_number}` : `#BATCH-${i.batch_id}`,
+            inspector: i.inspector?.name || 'Authorized QA',
+            avatar: i.inspector?.name ? i.inspector.name.slice(0, 2).toUpperCase() : 'QA',
+            timestamp: new Date(i.created_at).toTimeString().split(' ')[0],
+            sampleSize: `${itemCount} item${itemCount === 1 ? '' : 's'}`,
+            defects: defectDisplay,
+            defectCount,
+            fpy: fpyDisplay,
+            batchStatus: i.batch?.status ?? 'unknown',
+            inspectionOutcome: runStatus,
+            station: productionLine,
+            backendInspection: i,
+          };
+        });
         setRuns(backendRuns);
         if (backendRuns.length > 0) {
           setSelectedRun((current) =>
@@ -154,46 +209,6 @@ export const InspectionsPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
-
-  // Update batches when product is selected in create form
-  useEffect(() => {
-    if (!createForm.product_id) {
-      setBatchesForSelectedProduct([]);
-      setIsLoadingBatches(false);
-      setCreateForm((prev) => ({ ...prev, batch_id: 0, quantity: 1 }));
-      return;
-    }
-
-    let isCurrent = true;
-    setIsLoadingBatches(true);
-    setBatchesForSelectedProduct([]);
-    setCreateForm((prev) => ({ ...prev, batch_id: 0, quantity: 1 }));
-    batchesApi
-      .list({ product_id: createForm.product_id, status: 'all' })
-      .then((res) => {
-        if (!isCurrent) return;
-        const activeBatches = res.batches.filter((b) => b.status !== 'archived');
-        setBatchesForSelectedProduct(activeBatches);
-        const firstBatch = activeBatches[0];
-        if (firstBatch) {
-          setCreateForm((prev) => ({
-            ...prev,
-            batch_id: firstBatch.id,
-            quantity: firstBatch.quantity ?? 1,
-          }));
-        }
-      })
-      .catch(() => {
-        if (isCurrent) setBatchesForSelectedProduct([]);
-      })
-      .finally(() => {
-        if (isCurrent) setIsLoadingBatches(false);
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [createForm.product_id]);
 
   useEffect(() => {
     const inspectionId = selectedRun?.backendInspection?.id;
@@ -217,20 +232,22 @@ export const InspectionsPage: React.FC = () => {
     setIsCreatingRun(true);
     let res: Awaited<ReturnType<typeof inspectionsApi.create>>;
     try {
-      res = await inspectionsApi.create({
+      res = await inspectionsApi.createWithBatch({
         product_id: Number(createForm.product_id),
-        batch_id: Number(createForm.batch_id),
         quantity: Number(createForm.quantity),
+        production_date: createForm.production_date || undefined,
+        production_line: createForm.production_line,
+        supplier: createForm.supplier,
         sample_reference: createForm.sample_reference,
-        sample_type: createForm.sample_type,
         observations: createForm.observations,
       });
     } catch (error) {
-      setFormError(getApiErrorMessage(error, 'Failed to create inspection run.'));
+      setFormError(getApiErrorMessage(error, 'Failed to create batch and inspection.'));
       return;
     } finally {
       setIsCreatingRun(false);
     }
+    const productionLine = res.inspection.batch?.production_line || res.inspection.sample_reference || 'Line SMT-1';
     const newRun: TelemetryRun = {
       id: `INS-${res.inspection.id.toString().padStart(4, '0')}`,
       sku: res.inspection.product?.name || `PROD-${res.inspection.product_id}`,
@@ -244,8 +261,9 @@ export const InspectionsPage: React.FC = () => {
       defects: '--',
       defectCount: 0,
       fpy: '—',
-      status: 'IN-PROGRESS',
-      station: 'Station Alpha - Optical SMT',
+      batchStatus: res.inspection.batch?.status ?? 'unknown',
+      inspectionOutcome: 'IN-PROGRESS',
+      station: productionLine,
       backendInspection: res.inspection,
     };
     setRuns([newRun, ...runs]);
@@ -255,6 +273,15 @@ export const InspectionsPage: React.FC = () => {
     setSelectedFiles([]);
     setBulkResult(null);
     setUploadError(null);
+    setCreateForm({
+      product_id: 0,
+      quantity: 1,
+      production_date: todayDateInputValue(),
+      production_line: '',
+      supplier: '',
+      sample_reference: '',
+      observations: '',
+    });
     fetchData();
   };
 
@@ -308,9 +335,9 @@ export const InspectionsPage: React.FC = () => {
 
   // Filtered runs
   const filteredRuns = runs.filter((r) => {
-    if (activeFilter === 'progress' && r.status !== 'IN-PROGRESS') return false;
-    if (activeFilter === 'flagged' && r.status !== 'REJECTED / HOLD') return false;
-    if (activeFilter === 'passed' && r.status !== 'PASSED') return false;
+    if (activeFilter === 'progress' && r.inspectionOutcome !== 'IN-PROGRESS') return false;
+    if (activeFilter === 'flagged' && r.inspectionOutcome !== 'REJECTED / HOLD') return false;
+    if (activeFilter === 'passed' && r.inspectionOutcome !== 'PASSED') return false;
     if (stationFilter !== 'all' && !r.station.toLowerCase().includes(stationFilter.toLowerCase())) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -326,32 +353,29 @@ export const InspectionsPage: React.FC = () => {
 
   return (
     <div className="w-full min-h-screen p-margin bg-background flex flex-col gap-space-lg select-none pb-12">
-      {/* Station Telemetry & Live Feed Ribbon */}
+      {/* Header & Status Ribbon */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
         <div className="flex flex-col">
           <div className="flex items-center gap-space-sm text-outline">
             <span className="text-label-sm uppercase tracking-widest font-mono">
-              FACILITY // SECTOR-07G
+              FACILITY // QUALITY OPERATIONS
             </span>
             <span className="text-surface-bright">/</span>
             <span className="text-label-sm uppercase tracking-widest font-mono text-tertiary">
-              STATION TELEMETRY
+              INSPECTION REGISTRY
             </span>
           </div>
           <div className="flex items-center gap-space-md mt-0.5">
             <span className="font-headline text-headline-lg text-on-surface font-bold">
-              Inspection Runs &amp; Telemetry
-            </span>
-            <span className="px-space-sm py-0.5 rounded-full bg-surface-container-high text-tertiary text-label-sm font-mono flex items-center gap-1 border border-tertiary/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse"></span> LIVE FEED
+              Inspection Runs &amp; Evidence Console
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-space-sm flex-wrap">
           <div className="flex items-center bg-surface-container-low px-space-md py-1.5 rounded-lg text-on-surface-variant font-mono text-body-sm border border-surface-container-high">
-            <span className="material-symbols-outlined text-[16px] mr-1.5 text-primary">schedule</span>
-            <span>SHIFT 02 (DAY) • LIVE STREAM</span>
+            <span className="material-symbols-outlined text-[16px] mr-1.5 text-primary">verified_user</span>
+            <span>PERSISTED DATABASE RECORDS</span>
           </div>
 
           <button
@@ -365,7 +389,7 @@ export const InspectionsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Telemetry Cards */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-md">
         <div className="bg-surface-container-low p-space-md rounded-xl flex flex-col justify-between shadow-sm border border-surface-container-high">
           <div className="flex items-center justify-between mb-space-sm">
@@ -377,59 +401,61 @@ export const InspectionsPage: React.FC = () => {
         </div>
         <div className="bg-surface-container-low p-space-md rounded-xl flex flex-col justify-between shadow-sm border border-surface-container-high">
           <div className="flex items-center justify-between mb-space-sm">
-            <span className="text-label-sm uppercase tracking-wider text-outline font-mono">IN PROGRESS</span>
+            <span className="text-label-sm uppercase tracking-wider text-outline font-mono">INSPECTIONS IN PROGRESS</span>
             <span className="material-symbols-outlined text-outline text-[18px]">pending</span>
           </div>
           <span className="font-headline text-headline-xl text-secondary font-mono font-bold">
-            {runs.filter((r) => r.status === 'IN-PROGRESS').length}
+            {runs.filter((r) => r.inspectionOutcome === 'IN-PROGRESS').length}
           </span>
           <span className="mt-1 text-outline text-label-sm font-mono">Active runs</span>
         </div>
         <div className="bg-surface-container-low p-space-md rounded-xl flex flex-col justify-between shadow-sm border border-surface-container-high">
           <div className="flex items-center justify-between mb-space-sm">
-            <span className="text-label-sm uppercase tracking-wider text-outline font-mono">FLAGGED / HOLD</span>
+            <span className="text-label-sm uppercase tracking-wider text-outline font-mono">INSPECTIONS NEEDING ACTION</span>
             <span className="material-symbols-outlined text-outline text-[18px]">warning</span>
           </div>
           <span className="font-headline text-headline-xl text-error font-mono font-bold">
-            {runs.filter((r) => r.status === 'REJECTED / HOLD').length}
+            {runs.filter((r) => r.inspectionOutcome === 'REJECTED / HOLD').length}
           </span>
           <span className="mt-1 text-outline text-label-sm font-mono">Require action</span>
         </div>
       </div>
 
-      {/* Filter Tabs & Station Selector Bar */}
+      {/* Filter Tabs & Production Line Selector Bar */}
       <div className="bg-surface-container-low p-space-sm rounded-xl flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-md border border-surface-container-high">
         <div className="flex items-center gap-space-sm bg-surface-container rounded-lg px-space-sm py-1 border border-surface-container-high w-fit">
           <span className="material-symbols-outlined text-[16px] text-outline">filter_list</span>
           <select
-            aria-label="Filter inspections by status"
+            aria-label="Filter inspections by outcome"
             value={activeFilter}
             onChange={(e) => setActiveFilter(e.target.value as typeof activeFilter)}
             className="bg-transparent text-on-surface text-body-sm focus:outline-none pr-space-md py-0.5 cursor-pointer"
           >
             <option value="all" className="bg-surface-container-highest text-on-surface">All Lots ({runs.length})</option>
             <option value="progress" className="bg-surface-container-highest text-on-surface">
-              In Progress ({runs.filter((r) => r.status === 'IN-PROGRESS').length})
+              In Progress ({runs.filter((r) => r.inspectionOutcome === 'IN-PROGRESS').length})
             </option>
             <option value="flagged" className="bg-surface-container-highest text-on-surface">
-              Flagged for Hold ({runs.filter((r) => r.status === 'REJECTED / HOLD').length})
+              Flagged for Hold ({runs.filter((r) => r.inspectionOutcome === 'REJECTED / HOLD').length})
             </option>
             <option value="passed" className="bg-surface-container-highest text-on-surface">
-              Passed ({runs.filter((r) => r.status === 'PASSED').length})
+              Passed ({runs.filter((r) => r.inspectionOutcome === 'PASSED').length})
             </option>
           </select>
         </div>
 
         <div className="flex items-center gap-space-sm flex-wrap">
           <div className="flex items-center bg-surface-container rounded-lg px-space-sm py-1 border border-surface-container-high">
-            <span className="material-symbols-outlined text-[16px] text-outline mr-1.5">tune</span>
+            <span className="material-symbols-outlined text-[16px] text-outline mr-1.5">precision_manufacturing</span>
             <select
               value={stationFilter}
               onChange={(e) => setStationFilter(e.target.value)}
               className="bg-transparent text-on-surface text-body-sm focus:outline-none pr-space-md py-0.5 cursor-pointer"
             >
-              <option value="all" className="bg-surface-container-highest text-on-surface">All Stations</option>
-              <option value="alpha" className="bg-surface-container-highest text-on-surface">Station Alpha • Optical SMT</option>
+              <option value="all" className="bg-surface-container-highest text-on-surface">All Lines</option>
+              {Array.from(new Set(runs.map((r) => r.station).filter(Boolean))).map((st) => (
+                <option key={st} value={st} className="bg-surface-container-highest text-on-surface">{st}</option>
+              ))}
             </select>
           </div>
 
@@ -457,10 +483,19 @@ export const InspectionsPage: React.FC = () => {
                   <th className="py-2.5 px-space-md">BATCH LOT</th>
                   <th className="py-2.5 px-space-md">INSPECTOR</th>
                   <th className="py-2.5 px-space-md">TIMESTAMP</th>
-                  <th className="py-2.5 px-space-md text-right">SAMPLE SIZE</th>
-                  <th className="py-2.5 px-space-md text-center">DEFECTS</th>
-                  <th className="py-2.5 px-space-md text-right">FPY %</th>
-                  <th className="py-2.5 px-space-md">STATUS</th>
+                  <th className="py-2.5 px-space-md text-right">
+                    SAMPLE SIZE
+                    <span className="block text-[10px] text-outline/80 normal-case font-normal">(Physical Items)</span>
+                  </th>
+                  <th className="py-2.5 px-space-md text-center">
+                    DEFECTS
+                    <span className="block text-[10px] text-outline/80 normal-case font-normal">(Confirmed)</span>
+                  </th>
+                  <th className="py-2.5 px-space-md text-right">
+                    FPY %
+                    <span className="block text-[10px] text-outline/80 normal-case font-normal">(Good/Analyzed Items)</span>
+                  </th>
+                  <th className="py-2.5 px-space-md">BATCH STATUS</th>
                   <th className="py-2.5 px-space-md text-right">ACTIONS</th>
                 </tr>
               </thead>
@@ -518,24 +553,9 @@ export const InspectionsPage: React.FC = () => {
                       </td>
                       <td className="py-2.5 px-space-md whitespace-nowrap">
                         <span
-                          className={`px-space-sm py-0.5 rounded-full text-label-sm font-mono flex items-center gap-1.5 w-max ${
-                            run.status === 'REJECTED / HOLD'
-                              ? 'bg-error-container/20 text-error border border-error/30'
-                              : run.status === 'PASSED'
-                              ? 'bg-tertiary-container/20 text-tertiary border border-tertiary/30'
-                              : 'bg-secondary-container/20 text-secondary border border-secondary/30'
-                          }`}
+                          className={`px-space-sm py-0.5 rounded-full text-label-sm font-mono border flex items-center gap-1.5 w-max ${getBatchStatusClass(run.batchStatus)}`}
                         >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              run.status === 'REJECTED / HOLD'
-                                ? 'bg-error'
-                                : run.status === 'PASSED'
-                                ? 'bg-tertiary'
-                                : 'bg-secondary animate-pulse'
-                            }`}
-                          ></span>
-                          {run.status}
+                          {getBatchStatusLabel(run.batchStatus)}
                         </span>
                       </td>
                       <td className="py-2.5 px-space-md text-right whitespace-nowrap">
@@ -566,12 +586,12 @@ export const InspectionsPage: React.FC = () => {
           {/* Table Footer */}
           <div className="p-space-md bg-surface-container-low flex flex-col sm:flex-row items-center justify-between gap-space-sm text-outline text-label-md border-t border-surface-container-high">
             <div className="flex items-center gap-space-sm font-mono text-body-sm">
-              <span>Showing {filteredRuns.length} of {runs.length} operational runs</span>
+              <span>Showing {filteredRuns.length} of {runs.length} persisted runs</span>
               <span>•</span>
-              <span className="text-tertiary">Telemetry Polling Rate: 250ms</span>
+              <span className="text-tertiary">Source: Inspection Database</span>
             </div>
-            <div className="flex items-center gap-1 font-mono">
-              <span className="text-secondary font-bold">ALL STATIONS CALIBRATED</span>
+            <div className="flex items-center gap-1 font-mono text-label-sm">
+              <span className="text-on-surface-variant font-medium">Defects: Human Verified • Unreviewed AI flags tracked separately</span>
             </div>
           </div>
       </div>
@@ -638,12 +658,12 @@ export const InspectionsPage: React.FC = () => {
       {/* Modal: New Inspection Run */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg bg-surface-container-low border border-surface-container-high rounded-xl p-space-lg shadow-2xl flex flex-col gap-space-md">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-surface-container-low border border-surface-container-high rounded-xl p-space-lg shadow-2xl flex flex-col gap-space-md">
             <div className="flex items-center justify-between pb-space-sm border-b border-surface-container-high">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">add_task</span>
                 <h3 className="font-headline text-headline-md font-bold text-on-surface">
-                  Initialize Inspection Run
+                  Create Batch &amp; Inspection
                 </h3>
               </div>
               <button
@@ -670,67 +690,57 @@ export const InspectionsPage: React.FC = () => {
                       {p.product_code} - {p.name}
                     </option>
                   ))}
-                  {products.length === 0 && (
-                    <option value={1}>PCB-XA90-REV3 (Optical SMT Main)</option>
-                  )}
                 </select>
+                {products.length === 0 && (
+                  <span className="text-label-sm text-outline">Register an active product before starting an inspection.</span>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-sm">
+              <p className="text-label-sm text-outline">
+                A new batch number will be generated. Batch and inspection quantities will match.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-sm">
                 <div className="flex flex-col gap-1">
-                  <label className="text-label-sm text-outline uppercase">Target Batch Lot</label>
-                  <select
-                    value={createForm.batch_id}
-                    onChange={(e) => {
-                      const batchId = Number(e.target.value);
-                      const selectedBatch = batchesForSelectedProduct.find((batch) => batch.id === batchId);
-                      setCreateForm({
-                        ...createForm,
-                        batch_id: batchId,
-                        quantity: selectedBatch?.quantity ?? 1,
-                      });
-                    }}
+                  <label className="text-label-sm text-outline uppercase">Production Date</label>
+                  <input
+                    type="date"
+                    value={createForm.production_date}
+                    onChange={(e) => setCreateForm({ ...createForm, production_date: e.target.value })}
                     className="bg-surface-container-lowest text-on-surface px-space-sm py-2 rounded border border-surface-container-high outline-none"
-                  >
-                    <option value={0}>{isLoadingBatches ? 'Loading batches…' : '-- Select Lot --'}</option>
-                    {batchesForSelectedProduct.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        #{b.batch_number} ({b.quantity ?? 'quantity not set'})
-                      </option>
-                    ))}
-                    {!isLoadingBatches && batchesForSelectedProduct.length === 0 && (
-                      <option value={0} disabled>No batches available</option>
-                    )}
-                  </select>
+                  />
                 </div>
-
                 <div className="flex flex-col gap-1">
-                  <label className="text-label-sm text-outline uppercase">Inspection Quantity</label>
+                  <label className="text-label-sm text-outline uppercase">Batch &amp; Inspection Quantity</label>
                   <input
                     type="number"
                     min={1}
-                    max={batchesForSelectedProduct.find((b) => b.id === createForm.batch_id)?.quantity ?? undefined}
                     required
                     value={createForm.quantity}
                     onChange={(e) => setCreateForm({ ...createForm, quantity: Number(e.target.value) })}
                     className="bg-surface-container-lowest text-on-surface px-space-sm py-2 rounded border border-surface-container-high outline-none"
                   />
-                  <span className="text-label-sm text-outline">Number of item slots to inspect.</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-label-sm text-outline uppercase">Production Line</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Casting Line 1"
+                    value={createForm.production_line}
+                    onChange={(e) => setCreateForm({ ...createForm, production_line: e.target.value })}
+                    className="bg-surface-container-lowest text-on-surface px-space-sm py-2 rounded border border-surface-container-high outline-none focus:border-primary"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-label-sm text-outline uppercase">Supplier / Vendor</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Apex Castings Ltd."
+                    value={createForm.supplier}
+                    onChange={(e) => setCreateForm({ ...createForm, supplier: e.target.value })}
+                    className="bg-surface-container-lowest text-on-surface px-space-sm py-2 rounded border border-surface-container-high outline-none focus:border-primary"
+                  />
                 </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-label-sm text-outline uppercase">Sample Classification</label>
-                  <select
-                    value={createForm.sample_type}
-                    onChange={(e) =>
-                      setCreateForm({ ...createForm, sample_type: e.target.value as SampleType })
-                    }
-                    className="bg-surface-container-lowest text-on-surface px-space-sm py-2 rounded border border-surface-container-high outline-none"
-                  >
-                    <option value="item">Individual Item</option>
-                    <option value="batch_sample">Batch Sample Set</option>
-                  </select>
-                </div>
               </div>
 
               <div className="flex flex-col gap-1">
@@ -745,10 +755,10 @@ export const InspectionsPage: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-label-sm text-outline uppercase">Initial Station Notes</label>
+                <label className="text-label-sm text-outline uppercase">Initial Inspection Observations</label>
                 <textarea
                   rows={2}
-                  placeholder="Enter calibration baseline or station observations..."
+                  placeholder="Enter sampling scope, visual observations, or batch notes..."
                   value={createForm.observations}
                   onChange={(e) => setCreateForm({ ...createForm, observations: e.target.value })}
                   className="bg-surface-container-lowest text-on-surface px-space-sm py-2 rounded border border-surface-container-high outline-none focus:border-primary"
@@ -765,10 +775,10 @@ export const InspectionsPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isCreatingRun || isLoadingBatches || !createForm.batch_id}
+                  disabled={isCreatingRun || !createForm.product_id || createForm.quantity < 1}
                   className="px-space-md py-2 rounded bg-primary-container text-on-primary-container font-bold hover:bg-secondary-container"
                 >
-                  {isCreatingRun ? 'Initializing…' : 'Initialize Run'}
+                  {isCreatingRun ? 'Creating…' : 'Create Batch & Inspection'}
                 </button>
               </div>
             </form>

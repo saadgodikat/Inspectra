@@ -38,7 +38,7 @@ class HumanReview(db.Model):
     reviewer = db.relationship("User", back_populates="reviews")
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "id": self.id,
             "inspection_id": self.inspection_id,
             "ml_result_id": self.ml_result_id,
@@ -50,6 +50,14 @@ class HumanReview(db.Model):
                 self.review_timestamp.isoformat() if self.review_timestamp else None
             ),
         }
+        if self.reviewer:
+            data["reviewer"] = {
+                "id": self.reviewer.id,
+                "name": self.reviewer.name,
+                "email": self.reviewer.email,
+                "role": self.reviewer.role,
+            }
+        return data
 
     def __repr__(self):
         return f"<HumanReview {self.id} [{self.decision}]>"

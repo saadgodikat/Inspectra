@@ -98,3 +98,12 @@ def update_user_role(user_id, current_user):
     )
     db.session.commit()
     return jsonify({"user": user.to_dict(), "message": "Role updated"}), 200
+
+
+@users_bp.route("/assignable", methods=["GET"])
+@require_permission("corrective_action.view")
+def list_assignable_users(current_user):
+    """List active users eligible for CAPA assignment."""
+    users = User.query.filter_by(is_active=True).order_by(User.name.asc()).all()
+    return jsonify({"users": [u.to_dict() for u in users]}), 200
+

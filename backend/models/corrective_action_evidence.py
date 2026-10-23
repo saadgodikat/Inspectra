@@ -32,17 +32,27 @@ class CorrectiveActionEvidence(db.Model):
     submitted_by = db.relationship("User", foreign_keys=[submitted_by_id])
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "id": self.id,
             "corrective_action_id": self.corrective_action_id,
             "submitted_by_id": self.submitted_by_id,
             "original_filename": self.original_filename,
+            "file_path": self.file_path,
+            "has_file": bool(self.file_path),
             "description": self.description,
             "notes": self.notes,
             "submitted_at": (
                 self.submitted_at.isoformat() if self.submitted_at else None
             ),
         }
+        if self.submitted_by:
+            data["submitted_by"] = {
+                "id": self.submitted_by.id,
+                "name": self.submitted_by.name,
+                "email": self.submitted_by.email,
+                "role": self.submitted_by.role,
+            }
+        return data
 
     def __repr__(self):
         return f"<CorrectiveActionEvidence {self.id}>"

@@ -6,6 +6,8 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
   switchRole: (role: UserRole) => Promise<void>;
   hasRole: (roles: UserRole | UserRole[]) => boolean;
 }
@@ -61,6 +63,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     init();
   }, []);
 
+  const login = async (email: string, password: string) => {
+    const res = await authApi.login(email, password);
+    applyAuth(res);
+  };
+
+  const logout = () => {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+  };
+
   const switchRole = async (role: UserRole) => {
     const res = await authApi.switchRole(role);
     applyAuth(res);
@@ -73,7 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, switchRole, hasRole }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, logout, switchRole, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
