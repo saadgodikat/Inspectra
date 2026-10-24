@@ -324,6 +324,47 @@ def test_pending_review_summary_labels_successful_ml_result_as_suggestion(
     assert "human inspector confirmation" in response.get_json()["answer"]
 
 
+def test_chatbot_counts_completed_inspections_from_reviewed_status(
+    app, client, inspector_user, monkeypatch
+):
+    def unexpected_model_call(*_args, **_kwargs):
+        raise AssertionError("Completed inspection counts must use database data.")
+
+    monkeypatch.setattr("backend.services.chatbot_service.urlopen", unexpected_model_call)
+    with app.app_context():
+        product = Product(product_code="CHAT-COMPLETE", name="Completion Count Test")
+        _db.session.add(product)
+        _db.session.flush()
+        batch = Batch(batch_number="BATCH-COMPLETE", product_id=product.id)
+        _db.session.add(batch)
+        _db.session.flush()
+        inspections = [
+            Inspection(
+                product_id=product.id,
+                batch_id=batch.id,
+                inspector_id=inspector_user.id,
+                status=status,
+            )
+            for status in ("reviewed", "reviewed", "pending_review")
+        ]
+        _db.session.add_all(inspections)
+        _db.session.commit()
+        reviewed_ids = {
+            inspection.id for inspection in inspections if inspection.status == "reviewed"
+        }
+
+    response = client.post(
+        "/api/chatbot/ask",
+        headers=_chat_headers(client),
+        json={"messages": [{"role": "user", "content": "how many inspection are complete"}]},
+    )
+
+    assert response.status_code == 200
+    result = response.get_json()
+    assert result["answer"] == "There are 2 completed inspection(s) (status: reviewed)."
+    assert {citation["id"] for citation in result["citations"]} == reviewed_ids
+
+
 def test_chatbot_denies_inspector_audit_query_before_retrieval(client, inspector_user):
     response = client.post(
         "/api/chatbot/ask",

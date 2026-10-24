@@ -691,6 +691,28 @@ def _handle_pending_reviews_query(question: str) -> dict | None:
     }
 
 
+def _handle_completed_inspections_query(question: str, role: str) -> dict | None:
+    """Count inspections that have completed human review."""
+    if (
+        role not in PERMISSION_MATRIX["inspection.view"]
+        or not re.search(r"\b(?:how\s+many|number\s+of|count(?:\s+of)?)\b", question, re.IGNORECASE)
+        or not re.search(r"\binspections?\b", question, re.IGNORECASE)
+        or not re.search(r"\b(?:complete(?:d)?|finished|reviewed)\b", question, re.IGNORECASE)
+    ):
+        return None
+
+    reviewed_query = Inspection.query.filter_by(status="reviewed")
+    count = reviewed_query.count()
+    citations = [
+        _citation("inspection", inspection.id, f"Inspection #{inspection.id} (reviewed)")
+        for inspection in reviewed_query.order_by(Inspection.id.desc()).limit(3).all()
+    ]
+    return {
+        "answer": f"There are {count} completed inspection(s) (status: reviewed).",
+        "citations": citations,
+    }
+
+
 def _handle_common_defects_query(question: str) -> dict | None:
     """Summarize human-confirmed defect categories from the database."""
     if not re.search(
@@ -841,6 +863,10 @@ def answer_project_question(messages: list[dict], role: str) -> dict:
     reviews_response = _handle_pending_reviews_query(question)
     if reviews_response is not None:
         return reviews_response
+
+    completed_inspections_response = _handle_completed_inspections_query(question, role)
+    if completed_inspections_response is not None:
+        return completed_inspections_response
 
     reinspection_response = _handle_reinspection_query(question)
     if reinspection_response is not None:

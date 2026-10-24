@@ -237,24 +237,6 @@ export const DashboardPage: React.FC = () => {
         {/* ── Right Sidebar ── */}
         <div className="space-y-6">
 
-          {/* Metric Source of Truth Card */}
-          <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="material-symbols-outlined text-[18px] text-primary">data_check</span>
-              <span className="text-label-sm text-outline font-mono uppercase tracking-wider">Metric Source of Truth</span>
-            </div>
-            <div className="space-y-2 text-[11px] font-mono">
-              <div className="p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
-                <span className="text-amber-400 font-semibold uppercase block mb-0.5">AI Flagged Predictions</span>
-                <p className="text-outline leading-tight">Pre-review model classifications. Displayed as decision support; never counted as confirmed defects.</p>
-              </div>
-              <div className="p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
-                <span className="text-primary font-semibold uppercase block mb-0.5">Confirmed Defects</span>
-                <p className="text-outline leading-tight">Durable findings created exclusively by an authorized human review decision or supervisor override.</p>
-              </div>
-            </div>
-          </div>
-
           {/* Inspection Status Summary */}
           <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high">
             <div className="flex items-center justify-between mb-4">
